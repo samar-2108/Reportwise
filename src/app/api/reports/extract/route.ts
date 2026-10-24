@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLLMProvider, LLMFile, QuotaExceededError } from "@/lib/llm";
 import { EXTRACTION_SYSTEM_PROMPT } from "@/prompts/extraction";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
-import { getSupabaseAdminClient, DEBUG_USER_ID, ensureDebugUser } from "@/lib/supabase/admin";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ExtractionResultSchema } from "@/lib/schemas/extraction";
 import { reportCache, computeFilesSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
@@ -20,12 +21,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Maximum 5 pages allowed per report" }, { status: 400 });
     }
 
-    // 1. Debug mode: authentication bypassed using provisioned debug user UUID
-    const userId = DEBUG_USER_ID;
-    const supabase = getSupabaseAdminClient();
-    if (supabase) {
-      await ensureDebugUser(supabase);
+    // 1. Authenticate user
+    const serverSupabase = await getSupabaseServerClient();
+    const {
+      data: { user },
+    } = await serverSupabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Please sign in with Google to upload and analyze your lab report." },
+        { status: 401 }
+      );
     }
+
+    const userId = user.id;
+    const supabase = getSupabaseAdminClient();
 
     // 2. Check per-user daily quota limit
     const limitCheck = userDailyCapLimiter.checkLimit(userId);
@@ -75,14 +85,19 @@ export async function POST(request: NextRequest) {
         await supabase.from("profiles").upsert(
           {
             id: userId,
-            full_name: "Debug User",
+            email: user.email ?? null,
+            full_name:
+              user.user_metadata?.full_name ||
+              user.user_metadata?.name ||
+              user.email?.split("@")[0] ||
+              "Patient",
             language: "en",
             updated_at: new Date().toISOString(),
           },
           { onConflict: "id" }
         );
       } catch (profileErr) {
-        console.warn("Could not upsert debug profile:", profileErr);
+        console.warn("Could not upsert profile:", profileErr);
       }
 
       const { error: insertError } = await supabase.from("reports").insert({

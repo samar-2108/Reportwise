@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { UploadZone } from "@/components/upload/upload-zone";
@@ -9,6 +10,7 @@ import { ResultsDashboard } from "@/components/results/results-dashboard";
 import { StepProgressLoader } from "@/components/ui/step-progress-loader";
 import { PrivacyConsentModal } from "@/components/privacy-consent-modal";
 import { useLanguage } from "@/lib/i18n/context";
+import { useAuth } from "@/lib/auth/context";
 import {
   ExtractionResult,
   ExtractionSuccess,
@@ -24,11 +26,14 @@ import {
   ScanEye,
   Sliders,
   ShieldCheck,
+  Loader2,
 } from "lucide-react";
 
 type FlowStage = "upload" | "extracting" | "confirming" | "analyzing" | "results";
 
 export default function Home() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const { language, t } = useLanguage();
   const [stage, setStage] = useState<FlowStage>("upload");
   const [extractedData, setExtractedData] = useState<ExtractionSuccess | null>(null);
@@ -43,6 +48,13 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<"retake" | "not_a_report" | "general" | null>(null);
   const [showConsentModal, setShowConsentModal] = useState(false);
+
+  // Require authentication: redirect unauthenticated users to /auth immediately
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace("/auth");
+    }
+  }, [authLoading, user, router]);
 
   // Handlers
   const handleExtractionStart = () => {
@@ -100,6 +112,11 @@ export default function Home() {
 
       const data = await res.json();
 
+      if (res.status === 401) {
+        window.location.href = "/auth?next=/";
+        return;
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "Failed to analyze report");
       }
@@ -129,6 +146,20 @@ export default function Home() {
     setErrorType(null);
     setReportId(undefined);
   };
+
+  if (authLoading || !user) {
+    return (
+      <div className="flex min-h-screen flex-col bg-slate-50">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center p-12">
+          <div className="flex items-center gap-2.5 text-xs text-slate-500 font-medium">
+            <Loader2 className="h-4 w-4 animate-spin text-teal-600" />
+            <span>Verifying session...</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">

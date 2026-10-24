@@ -1,16 +1,28 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { MOCK_EXTRACTION_CBC, MOCK_INTERPRETATION_CBC, MOCK_EXTRACTION_CRITICAL, MOCK_INTERPRETATION_CRITICAL } from "@/lib/fixtures/sample-reports";
-import { evaluateAllTests } from "@/lib/medical/deterministic-check";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export async function GET(_request: NextRequest) {
   try {
+    const serverSupabase = await getSupabaseServerClient();
+    const {
+      data: { user },
+    } = await serverSupabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in with Google to view past reports." },
+        { status: 401 }
+      );
+    }
+
     const supabase = getSupabaseAdminClient();
 
     if (supabase) {
       const { data: reports, error } = await supabase
         .from("reports")
         .select("*")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -20,45 +32,18 @@ export async function GET() {
       }
     }
 
-    // Offline / Demo Mode: only used if Supabase client is not configured
-    const cbcEvaluated = evaluateAllTests(MOCK_EXTRACTION_CBC.tests);
-    const criticalEvaluated = evaluateAllTests(MOCK_EXTRACTION_CRITICAL.tests);
-
-    const demoReports = [
-      {
-        id: "demo-report-cbc",
-        user_id: "demo-user",
-        title: "Complete Blood Count (CBC)",
-        report_date: "14 Oct 2026",
-        report_type: "Complete Blood Count (CBC)",
-        status: "completed",
-        storage_file_paths: [],
-        extracted_data: MOCK_EXTRACTION_CBC,
-        confirmed_data: cbcEvaluated.tests,
-        analysis_data: MOCK_INTERPRETATION_CBC,
-        error_message: null,
-        created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
-        updated_at: new Date(Date.now() - 7 * 86400000).toISOString(),
-      },
-      {
-        id: "demo-report-critical",
-        user_id: "demo-user",
-        title: "Comprehensive Metabolic & Glucose Panel",
-        report_date: "21 Oct 2026",
-        report_type: "Comprehensive Metabolic & Glucose Panel",
-        status: "completed",
-        storage_file_paths: [],
-        extracted_data: MOCK_EXTRACTION_CRITICAL,
-        confirmed_data: criticalEvaluated.tests,
-        analysis_data: MOCK_INTERPRETATION_CRITICAL,
-        error_message: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    return NextResponse.json({ reports: demoReports });
+    return NextResponse.json({ reports: [] });
   } catch (error: unknown) {
+    // Allow Next.js internal prerender bailouts to propagate
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "digest" in error &&
+      (error as { digest: string }).digest === "HANGING_PROMISE_REJECTION"
+    ) {
+      throw error;
+    }
+
     console.error("List reports error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to list reports" },

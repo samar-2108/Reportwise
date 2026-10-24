@@ -34,6 +34,10 @@ export default function HistoryPage() {
     async function loadReports() {
       try {
         const res = await fetch("/api/reports/list");
+        if (res.status === 401 && !ignore) {
+          window.location.href = "/auth?next=/history";
+          return;
+        }
         if (res.ok && !ignore) {
           const data = await res.json();
           setReports(data.reports || []);

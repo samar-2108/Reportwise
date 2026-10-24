@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function DELETE(
   _request: NextRequest,
@@ -13,21 +14,38 @@ export async function DELETE(
       return NextResponse.json({ success: true, message: "Demo report removed" });
     }
 
+    const serverSupabase = await getSupabaseServerClient();
+    const {
+      data: { user },
+    } = await serverSupabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in." },
+        { status: 401 }
+      );
+    }
+
     const supabase = getSupabaseAdminClient();
 
     if (!supabase) {
       return NextResponse.json({ success: true, message: "Report deleted (offline mode)" });
     }
 
-    // 1. Fetch report to get storage files list
+    // 1. Fetch report to get storage files list (scoped to authenticated user)
     const { data: report } = await supabase
       .from("reports")
       .select("id, storage_file_paths, user_id")
       .eq("id", id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
+    if (!report) {
+      return NextResponse.json({ success: true, message: "Report removed" });
+    }
+
     // 2. Remove files from storage bucket if any exist
-    if (report && report.storage_file_paths && report.storage_file_paths.length > 0) {
+    if (report.storage_file_paths && report.storage_file_paths.length > 0) {
       try {
         await supabase.storage.from("reports").remove(report.storage_file_paths);
       } catch (err) {
@@ -35,8 +53,13 @@ export async function DELETE(
       }
     }
 
-    // 3. Delete report row
-    const { error: deleteError } = await supabase.from("reports").delete().eq("id", id);
+    // 3. Delete report row (scoped to authenticated user)
+    const { error: deleteError } = await supabase
+      .from("reports")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id);
+
     if (deleteError) {
       console.error("Delete report error in Supabase:", deleteError);
       throw deleteError;

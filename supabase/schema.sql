@@ -1,13 +1,14 @@
 -- ==============================================================================
--- ReportWise: Supabase Database Schema & Storage Configuration (Debug / No-Auth Mode)
+-- ReportWise: Supabase Database Schema, Google Auth & Storage Configuration
 -- ==============================================================================
 
 -- 1. EXTENSIONS
 create extension if not exists "uuid-ossp";
 
 -- 2. PROFILES TABLE
+-- Stores user demographic settings, language preference, and profile details
 create table if not exists public.profiles (
-  id text primary key default 'd3b00000-0000-4000-a000-000000000000',
+  id uuid primary key references auth.users(id) on delete cascade,
   email text,
   full_name text,
   age integer check (age is null or (age >= 0 and age <= 125)),
@@ -27,7 +28,7 @@ create index if not exists idx_profiles_email on public.profiles(email);
 -- Stores uploaded medical reports, extraction states, and AI interpretations
 create table if not exists public.reports (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null default 'd3b00000-0000-4000-a000-000000000000',
+  user_id uuid not null references auth.users(id) on delete cascade,
   title text not null default 'Lab Report',
   report_date date,
   report_type text,
@@ -41,6 +42,27 @@ create table if not exists public.reports (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Safely migrate legacy text columns to uuid if they were created before auth integration
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'id' and data_type = 'text'
+  ) then
+    alter table public.profiles alter column id type uuid using id::uuid;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' and table_name = 'reports' and column_name = 'user_id' and data_type = 'text'
+  ) then
+    alter table public.reports alter column user_id type uuid using user_id::uuid;
+  end if;
+exception
+  when others then
+    null;
+end $$;
 
 -- Indexes for fast queries
 create index if not exists idx_reports_user_id on public.reports(user_id);
@@ -66,25 +88,78 @@ create trigger set_reports_updated_at
   before update on public.reports
   for each row execute function public.set_updated_at();
 
--- 5. ROW LEVEL SECURITY (RLS) - Permissive for Debugging
+-- 5. AUTOMATIC PROFILE CREATION TRIGGER (GOOGLE OAUTH)
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, email, full_name, language)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+    'en'
+  )
+  on conflict (id) do update set
+    email = excluded.email,
+    full_name = coalesce(excluded.full_name, profiles.full_name);
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- 6. ROW LEVEL SECURITY (RLS) - Patient Isolation Policies
 alter table public.profiles enable row level security;
 alter table public.reports enable row level security;
 
--- Profiles Policies
+-- Profiles Policies (Native UUID = UUID comparison)
 drop policy if exists "Debug allow profiles access" on public.profiles;
-create policy "Debug allow profiles access"
-  on public.profiles for all
-  using (true)
-  with check (true);
+drop policy if exists "Users can view own profile" on public.profiles;
+create policy "Users can view own profile"
+  on public.profiles for select
+  using (auth.uid() = id);
 
--- Reports Policies
+drop policy if exists "Users can update own profile" on public.profiles;
+create policy "Users can update own profile"
+  on public.profiles for update
+  using (auth.uid() = id);
+
+drop policy if exists "Users can insert own profile" on public.profiles;
+create policy "Users can insert own profile"
+  on public.profiles for insert
+  with check (auth.uid() = id);
+
+drop policy if exists "Users can delete own profile" on public.profiles;
+create policy "Users can delete own profile"
+  on public.profiles for delete
+  using (auth.uid() = id);
+
+-- Reports Policies (Native UUID = UUID comparison)
 drop policy if exists "Debug allow reports access" on public.reports;
-create policy "Debug allow reports access"
-  on public.reports for all
-  using (true)
-  with check (true);
+drop policy if exists "Users can view own reports" on public.reports;
+create policy "Users can view own reports"
+  on public.reports for select
+  using (auth.uid() = user_id);
 
--- 6. STORAGE CONFIGURATION & POLICIES
+drop policy if exists "Users can insert own reports" on public.reports;
+create policy "Users can insert own reports"
+  on public.reports for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own reports" on public.reports;
+create policy "Users can update own reports"
+  on public.reports for update
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own reports" on public.reports;
+create policy "Users can delete own reports"
+  on public.reports for delete
+  using (auth.uid() = user_id);
+
+-- 7. STORAGE CONFIGURATION & POLICIES
 -- Create the private 'reports' bucket if it doesn't already exist
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
@@ -99,18 +174,32 @@ on conflict (id) do update set
   file_size_limit = 10485760,
   allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
 
--- Storage RLS: Allow uploads and reads in reports bucket during debug mode
+-- Storage RLS: Restrict uploads, reads, and deletes to the user's dedicated folder
+-- storage.foldername(name)[1] returns the root folder (user ID as text)
 drop policy if exists "Debug allow storage upload" on storage.objects;
-create policy "Debug allow storage upload"
-  on storage.objects for insert
-  with check (bucket_id = 'reports');
-
 drop policy if exists "Debug allow storage select" on storage.objects;
-create policy "Debug allow storage select"
-  on storage.objects for select
-  using (bucket_id = 'reports');
-
 drop policy if exists "Debug allow storage delete" on storage.objects;
-create policy "Debug allow storage delete"
+
+drop policy if exists "Users can upload own report files" on storage.objects;
+create policy "Users can upload own report files"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'reports' and
+    (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can read own report files" on storage.objects;
+create policy "Users can read own report files"
+  on storage.objects for select
+  using (
+    bucket_id = 'reports' and
+    (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can delete own report files" on storage.objects;
+create policy "Users can delete own report files"
   on storage.objects for delete
-  using (bucket_id = 'reports');
+  using (
+    bucket_id = 'reports' and
+    (storage.foldername(name))[1] = auth.uid()::text
+  );

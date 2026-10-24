@@ -12,12 +12,16 @@ import {
   Languages,
   Utensils,
   AlertTriangle,
+  LogOut,
+  User,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth/context";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
+  const { user, profile, signOut } = useAuth();
 
   const [dietPreference, setDietPreference] = useState<"veg" | "non-veg" | "vegan">(() => {
     if (typeof window !== "undefined") {
@@ -101,6 +105,44 @@ export default function SettingsPage() {
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-800 flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
               Preferences saved successfully! Future analyses will adapt to these settings.
+            </div>
+          )}
+
+          {/* Account Profile Card */}
+          {user && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {user.user_metadata?.avatar_url || user.user_metadata?.picture ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.user_metadata?.avatar_url || user.user_metadata?.picture}
+                    alt="Profile"
+                    className="h-12 w-12 rounded-full object-cover border border-slate-200"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-600 text-sm font-bold text-white uppercase">
+                    {(profile?.full_name || user.email || "P").charAt(0)}
+                  </div>
+                )}
+                <div>
+                  <div className="font-bold text-slate-900 text-sm">
+                    {profile?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || "Patient"}
+                  </div>
+                  <div className="text-xs text-slate-500">{user.email}</div>
+                  <div className="text-[11px] text-teal-600 font-semibold mt-0.5 flex items-center gap-1">
+                    <span>Google Authenticated</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors shrink-0"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign Out
+              </button>
             </div>
           )}
 

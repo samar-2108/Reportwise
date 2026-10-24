@@ -21,6 +21,7 @@ import {
   MOCK_EXTRACTION_CRITICAL,
 } from "@/lib/fixtures/sample-reports";
 import { ExtractionResult } from "@/lib/schemas/extraction";
+import { useAuth } from "@/lib/auth/context";
 
 export interface UploadedPage {
   id: string;
@@ -36,6 +37,7 @@ interface UploadZoneProps {
 
 export function UploadZone({ onExtractionComplete, onExtractionStart, onError }: UploadZoneProps) {
   const { t } = useLanguage();
+  const { user, signInWithGoogle } = useAuth();
   const [pages, setPages] = useState<UploadedPage[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -108,6 +110,15 @@ export function UploadZone({ onExtractionComplete, onExtractionStart, onError }:
       return;
     }
 
+    if (!user) {
+      try {
+        await signInWithGoogle("/");
+      } catch {
+        onError("Please sign in with Google to analyze lab reports.");
+      }
+      return;
+    }
+
     onExtractionStart();
 
     try {
@@ -151,6 +162,25 @@ export function UploadZone({ onExtractionComplete, onExtractionStart, onError }:
 
   return (
     <div className="space-y-6">
+      {/* Sign In Banner if Guest */}
+      {!user && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-teal-50/90 p-4 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5 text-teal-950 font-medium">
+            <Sparkles className="h-4 w-4 text-teal-600 shrink-0" />
+            <span>
+              Sign in with Google to analyze lab reports, save your history, and track biomarker trends over time.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => signInWithGoogle("/")}
+            className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-teal-700 transition-colors shrink-0"
+          >
+            <span>Sign In with Google</span>
+          </button>
+        </div>
+      )}
+
       {/* Privacy Header Crop Reminder */}
       <div className="flex items-start gap-2.5 rounded-xl border border-teal-200 bg-teal-50/70 p-3.5 text-xs text-teal-950">
         <Scissors className="h-4 w-4 text-teal-600 shrink-0 mt-0.5" />

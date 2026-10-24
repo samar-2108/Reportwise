@@ -1,10 +1,23 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdminClient, DEBUG_USER_ID } from "@/lib/supabase/admin";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST() {
   try {
+    const serverSupabase = await getSupabaseServerClient();
+    const {
+      data: { user },
+    } = await serverSupabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in." },
+        { status: 401 }
+      );
+    }
+
     const supabase = getSupabaseAdminClient();
-    const userId = DEBUG_USER_ID;
+    const userId = user.id;
 
     if (!supabase) {
       return NextResponse.json({

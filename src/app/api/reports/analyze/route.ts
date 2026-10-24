@@ -3,7 +3,8 @@ import { getLLMProvider, QuotaExceededError } from "@/lib/llm";
 import { INTERPRETATION_SYSTEM_PROMPT, buildInterpretationUserPrompt } from "@/prompts/interpretation";
 import { InterpretationResultSchema } from "@/lib/schemas/interpretation";
 import { evaluateAllTests } from "@/lib/medical/deterministic-check";
-import { getSupabaseAdminClient, DEBUG_USER_ID, ensureDebugUser } from "@/lib/supabase/admin";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
 import { reportCache, computeInputSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
@@ -17,12 +18,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No confirmed test values provided" }, { status: 400 });
     }
 
-    // 1. Debug mode: authentication bypassed using provisioned debug user UUID
-    const userId = DEBUG_USER_ID;
-    const supabase = getSupabaseAdminClient();
-    if (supabase) {
-      await ensureDebugUser(supabase);
+    // 1. Authenticate user
+    const serverSupabase = await getSupabaseServerClient();
+    const {
+      data: { user },
+    } = await serverSupabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Please sign in with Google to analyze lab reports." },
+        { status: 401 }
+      );
     }
+
+    const userId = user.id;
+    const supabase = getSupabaseAdminClient();
     const keepOriginalFiles = false;
 
     // Validate that reportId is a valid UUID, otherwise generate a fresh valid UUID for Postgres
@@ -191,7 +201,12 @@ export async function POST(request: NextRequest) {
         await supabase.from("profiles").upsert(
           {
             id: userId,
-            full_name: "Debug User",
+            email: user.email ?? null,
+            full_name:
+              user.user_metadata?.full_name ||
+              user.user_metadata?.name ||
+              user.email?.split("@")[0] ||
+              "Patient",
             language: userProfile?.language || "en",
             diet_preference: userProfile?.dietPreference || "veg",
             updated_at: new Date().toISOString(),
@@ -199,7 +214,7 @@ export async function POST(request: NextRequest) {
           { onConflict: "id" }
         );
       } catch (profileErr) {
-        console.warn("Could not upsert debug profile:", profileErr);
+        console.warn("Could not upsert profile:", profileErr);
       }
 
       const { error: upsertError } = await supabase

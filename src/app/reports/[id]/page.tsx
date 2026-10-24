@@ -38,6 +38,10 @@ function ReportDetailContent({ params }: PageProps) {
     async function loadReport() {
       try {
         const res = await fetch(`/api/reports/list`);
+        if (res.status === 401 && !ignore) {
+          window.location.href = `/auth?next=/reports/${id}`;
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           const found = (data.reports || []).find((r: { id: string }) => r.id === id);

@@ -95,6 +95,17 @@ cp .env.example .env.local
    - Enables Row Level Security (RLS) on tables and storage objects so users can only access their own data.
    - Creates triggers for auto-creating profile rows on signup and updating timestamps.
 
+### 🔑 Enabling Google OAuth in Supabase
+
+1. In your **Supabase Dashboard**, navigate to **Authentication** -> **Providers** -> **Google**.
+2. Toggle Google to **Enabled**.
+3. Enter your **Client ID** and **Client Secret** (obtained from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) under OAuth 2.0 Client IDs).
+4. In Google Cloud Console, add your Supabase redirect URI:
+   `https://<project-ref>.supabase.co/auth/v1/callback`
+5. In Supabase Dashboard under **Authentication** -> **URL Configuration**, add your application callback URL:
+   - Development: `http://localhost:3000/auth/callback`
+   - Production: `https://your-domain.com/auth/callback`
+
 ---
 
 ## 🏃 How to Run Locally
