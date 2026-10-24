@@ -138,12 +138,13 @@ export function UploadZone({ onExtractionComplete, onExtractionStart, onError }:
   const loadSampleFixture = (type: "cbc" | "lipid" | "critical") => {
     onExtractionStart();
     setTimeout(() => {
+      const mockId = crypto.randomUUID();
       if (type === "cbc") {
-        onExtractionComplete(MOCK_EXTRACTION_CBC);
+        onExtractionComplete({ ...MOCK_EXTRACTION_CBC, reportId: mockId } as unknown as ExtractionResult);
       } else if (type === "lipid") {
-        onExtractionComplete(MOCK_EXTRACTION_LIPID);
+        onExtractionComplete({ ...MOCK_EXTRACTION_LIPID, reportId: mockId } as unknown as ExtractionResult);
       } else {
-        onExtractionComplete(MOCK_EXTRACTION_CRITICAL);
+        onExtractionComplete({ ...MOCK_EXTRACTION_CRITICAL, reportId: mockId } as unknown as ExtractionResult);
       }
     }, 600);
   };

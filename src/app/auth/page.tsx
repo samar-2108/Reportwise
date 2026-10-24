@@ -17,10 +17,10 @@ export default function AuthPage() {
           </div>
           <div className="space-y-1">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              Debug Mode Active
+              Direct Access Enabled
             </h1>
             <p className="text-xs text-slate-500">
-              Authentication has been removed for debugging. All upload, extraction, analysis, and history features are directly accessible without signing in.
+              All upload, extraction, analysis, and history features are directly accessible without signing in.
             </p>
           </div>
 

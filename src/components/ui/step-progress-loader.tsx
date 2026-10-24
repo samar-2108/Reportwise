@@ -27,7 +27,7 @@ export function StepProgressLoader({ currentStage = "extracting" }: StepProgress
   const steps = [
     {
       title: "Reading report...",
-      desc: "Gemini Vision is transcribing exact test names, values, and printed reference intervals.",
+      desc: "Transcribing exact test names, values, and printed reference intervals with high-precision optical analysis.",
       icon: FileSearch,
     },
     {

@@ -123,23 +123,85 @@ cp .env.example .env.local
 
 ---
 
-## 🚢 Deploying to Vercel
+## 🏛️ System Architecture
 
-1. Push your repository to GitHub, GitLab, or Bitbucket.
-2. Go to [Vercel](https://vercel.com/) and click **"Add New Project"**.
-3. Import your ReportWise repository.
-4. In **Environment Variables**, add:
-   - `GEMINI_API_KEY` (from https://aistudio.google.com/)
-   - `GEMINI_MODEL_EXTRACT=gemini-2.0-flash`
-   - `GEMINI_MODEL_INTERPRET=gemini-2.0-flash`
-   - `LLM_PROVIDER=gemini`
-   - `MAX_ANALYSES_PER_USER_PER_DAY=20`
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `NEXT_PUBLIC_APP_URL=https://your-app.vercel.app`
-5. Click **"Deploy"**.
-6. In your Supabase Dashboard under **Authentication -> URL Configuration**, add `https://your-app.vercel.app/**` to the **Redirect URLs**.
+ReportWise follows a security-hardened, human-in-the-loop architecture designed to eliminate hallucinations, enforce clinical safety cutoffs deterministically, and protect sensitive patient data.
+
+```mermaid
+flowchart TD
+    subgraph Client["1. Client Layer (Next.js 16 / React 19)"]
+        Upload["Camera / Document Ingestion\n(Multi-page, Canvas Compression)"]
+        ConfirmTable["Human-in-the-Loop Table\n(Edit OCR errors, verify values)"]
+        Dashboard["Results Dashboard\n(Values, Diet, Habits, Doctor Questions)"]
+        PDFGen["Client-Side PDF Engine\n(Single-page & Full Report Export)"]
+    end
+
+    subgraph API["2. Next.js App Router (Backend Routes)"]
+        ExtractRoute["/api/reports/extract\n(Pass 1 Extraction Route)"]
+        AnalyzeRoute["/api/reports/analyze\n(Pass 2 Interpretation Route)"]
+        ListRoute["/api/reports/list\n(History & Trend Query)"]
+        DeleteRoute["/api/reports/[id]\n(GDPR/Privacy Deletion)"]
+    end
+
+    subgraph Safety["3. Clinical Safety & Caching Engine"]
+        RateLimiter["Daily Cap Limiter\n(Sliding window per-user cap)"]
+        ShaCache["SHA-256 Content Cache\n(Duplicate file & input deduplication)"]
+        DeterministicEngine["Deterministic Clinical Engine\n(Panic values, ratio excess, OCR verification)"]
+    end
+
+    subgraph LLM["4. Pluggable AI Provider Layer"]
+        ProviderInterface["LLMProvider Interface\n(Strict Zod Schema Output)"]
+        VisionAI["Optical Vision Analysis\n(Extraction: test, value, unit, ref range)"]
+        ClinicalAI["Medical Interpretation\n(8th-grade explanations, Indian diet)"]
+    end
+
+    subgraph Storage["5. Supabase Persistence & Storage"]
+        PostgresDB[("PostgreSQL\n(profiles, reports with JSONB)")]
+        PrivateBucket[("Private Encrypted Storage\n(Auto-deleted after extraction)")]
+    end
+
+    %% Flow connections
+    Upload --> RateLimiter
+    RateLimiter --> ExtractRoute
+    ExtractRoute --> ShaCache
+    ShaCache --> VisionAI
+    VisionAI --> ConfirmTable
+    
+    ConfirmTable --> AnalyzeRoute
+    AnalyzeRoute --> DeterministicEngine
+    DeterministicEngine --> ClinicalAI
+    ClinicalAI --> PostgresDB
+    ClinicalAI --> Dashboard
+    
+    Dashboard --> PDFGen
+    Dashboard --> ListRoute
+    ListRoute --> PostgresDB
+    DeleteRoute --> PostgresDB
+    DeleteRoute --> PrivateBucket
+    ExtractRoute -.-> PrivateBucket
+```
+
+### Core Architectural Layers & Invariants
+
+#### 1. Ingestion & Pre-Upload Privacy (Client)
+- **Zero-Server Canvas Compression:** Mobile camera photos (often 5–15 MB) are resized and compressed to under 1.5 MB directly in the browser via HTML5 `<canvas>` before network transmission.
+- **Header Anonymization Reminder:** Users are guided to crop out patient identifiers (name, address, hospital MRN) so AI models process only clinical biomarker data.
+
+#### 2. Two-Pass AI Pipeline with Human-in-the-Loop Verification
+- **Pass 1 (Optical Extraction):** Transcribes raw laboratory values into a strictly typed Zod schema (`ExtractionResultSchema`). Detects unreadable or blurry images (`"retake"`) and non-medical files (`"not_a_report"`).
+- **Mandatory Confirmation Stage:** Transcriptions are rendered in an interactive editable table. Users verify or correct OCR misreads before any clinical interpretation is generated.
+- **Pass 2 (Plain-Language Interpretation):** Produces 8th-grade explanations, follow-up tests, culturally tailored Indian diet recommendations (dal, ragi, curd, amla), and structured doctor discussion questions.
+
+#### 3. Deterministic Clinical Safety Layer (No LLM Hallucinations)
+- **Deterministic Critical Decision:** The AI model **never** decides whether a value is normal, abnormal, or critical.
+- **Panic Value Cutoffs:** Configured adult critical boundaries (`panic-values.ts`) take precedence (e.g. Hemoglobin <7 or >20 g/dL, Platelets <50k, Potassium <2.5 or >6.5 mmol/L).
+- **OCR Decimal Misread Detection:** Mathematical ratio checks ($r = v / \text{Ref} \ge 10$ or $\le 0.1$) identify probable OCR decimal shift errors (e.g. `120` instead of `12.0`), highlighting them as `"verify"` rather than triggering false emergencies.
+- **Urgent Care Protocol:** If any critical cutoff is breached, a dark red banner (*"Please see a doctor soon"*) is pinned to the top, and routine lifestyle tabs are collapsed behind a conscious toggle so urgent care is never obscured by routine advice.
+
+#### 4. Persistence, Rate Limiting & Storage Minimization
+- **Supabase PostgreSQL & Admin Bypass:** API routes leverage `SUPABASE_SERVICE_ROLE_KEY` to guarantee data integrity across profiles and reports.
+- **Privacy Auto-Cleanup:** Original uploaded files in Supabase Storage are automatically purged from the bucket once interpretation completes.
+- **SHA-256 Deduplication Cache:** Identical uploads and identical confirmed inputs hit a fast in-memory SHA-256 cache, eliminating redundant model latency and protecting API quota.
 
 ---
 

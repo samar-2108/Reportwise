@@ -8,7 +8,6 @@ import { EditableConfirmationTable } from "@/components/upload/editable-confirma
 import { ResultsDashboard } from "@/components/results/results-dashboard";
 import { StepProgressLoader } from "@/components/ui/step-progress-loader";
 import { PrivacyConsentModal } from "@/components/privacy-consent-modal";
-import { FixturesPreview } from "@/components/fixtures-preview";
 import { useLanguage } from "@/lib/i18n/context";
 import {
   ExtractionResult,
@@ -143,7 +142,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <span className="font-semibold flex items-center gap-1.5 text-amber-950">
                   <ShieldAlert className="h-4 w-4 text-amber-700" />
-                  Privacy & Data Processing Notice (Google Gemini Free Tier)
+                  Privacy & Data Processing Notice
                 </span>
                 <button
                   onClick={() => setShowConsentModal(true)}
@@ -153,7 +152,7 @@ export default function Home() {
                 </button>
               </div>
               <p className="leading-relaxed text-amber-800">
-                Your report is processed by a third-party AI service (Google Gemini). Do not upload reports containing information you are not comfortable sharing. Remove your name, phone number, and ID numbers where possible.
+                Your report is processed by a secure automated medical AI system. Do not upload reports containing information you are not comfortable sharing. Remove your name, phone number, and ID numbers where possible.
               </p>
             </div>
           )}
@@ -199,7 +198,7 @@ export default function Home() {
               <section className="text-center space-y-3 pt-2 sm:pt-4">
                 <div className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50/80 px-3.5 py-1 text-xs font-semibold text-teal-800">
                   <Sparkles className="h-3.5 w-3.5 text-teal-600" />
-                  <span>Google Gemini Vision • 2-Pass Verified Intelligence</span>
+                  <span>2-Pass Verified Medical AI Intelligence</span>
                 </div>
 
                 <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl md:text-5xl">
@@ -252,11 +251,6 @@ export default function Home() {
                     Educates without diagnosing. Only runs after your confirmation. Features Indian diet staples and doctor discussion prompts.
                   </p>
                 </div>
-              </section>
-
-              {/* Interactive Fixtures Inspection */}
-              <section className="space-y-3">
-                <FixturesPreview />
               </section>
             </div>
           )}

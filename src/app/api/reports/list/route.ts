@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { MOCK_EXTRACTION_CBC, MOCK_INTERPRETATION_CBC, MOCK_EXTRACTION_CRITICAL, MOCK_INTERPRETATION_CRITICAL } from "@/lib/fixtures/sample-reports";
 import { evaluateAllTests } from "@/lib/medical/deterministic-check";
 
 export async function GET() {
   try {
-    let supabase = null;
-
-    try {
-      supabase = await getSupabaseServerClient();
-    } catch {
-      // Demo / offline mode
-    }
+    const supabase = getSupabaseAdminClient();
 
     if (supabase) {
       const { data: reports, error } = await supabase
@@ -19,12 +13,14 @@ export async function GET() {
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (!error && reports && reports.length > 0) {
-        return NextResponse.json({ reports });
+      if (error) {
+        console.error("Supabase list reports error:", error);
+      } else {
+        return NextResponse.json({ reports: reports || [] });
       }
     }
 
-    // Demo Mode: provide 2 pre-populated sample reports if no authenticated user yet
+    // Offline / Demo Mode: only used if Supabase client is not configured
     const cbcEvaluated = evaluateAllTests(MOCK_EXTRACTION_CBC.tests);
     const criticalEvaluated = evaluateAllTests(MOCK_EXTRACTION_CRITICAL.tests);
 

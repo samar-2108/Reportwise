@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient, DEBUG_USER_ID } from "@/lib/supabase/admin";
 
 export async function POST() {
   try {
-    const supabase = await getSupabaseServerClient();
-    const userId = "debug-user";
+    const supabase = getSupabaseAdminClient();
+    const userId = DEBUG_USER_ID;
 
-    // 1. Find all reports and storage paths (auth bypassed for debugging)
+    if (!supabase) {
+      return NextResponse.json({
+        success: true,
+        message: "All data cleared (offline mode).",
+      });
+    }
+
+    // 1. Find all reports and storage paths
     const { data: userReports } = await supabase
       .from("reports")
       .select("storage_file_paths")

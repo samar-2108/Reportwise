@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLLMProvider, LLMFile, QuotaExceededError } from "@/lib/llm";
 import { EXTRACTION_SYSTEM_PROMPT } from "@/prompts/extraction";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient, DEBUG_USER_ID, ensureDebugUser } from "@/lib/supabase/admin";
 import { ExtractionResultSchema } from "@/lib/schemas/extraction";
 import { reportCache, computeFilesSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
@@ -20,13 +20,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Maximum 5 pages allowed per report" }, { status: 400 });
     }
 
-    // 1. Debug mode: authentication bypassed
-    const userId = "debug-user";
-    let supabase = null;
-    try {
-      supabase = await getSupabaseServerClient();
-    } catch {
-      // Supabase unconfigured or offline mode
+    // 1. Debug mode: authentication bypassed using provisioned debug user UUID
+    const userId = DEBUG_USER_ID;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await ensureDebugUser(supabase);
     }
 
     // 2. Check per-user daily quota limit
@@ -63,7 +61,9 @@ export async function POST(request: NextRequest) {
             upsert: true,
           });
 
-        if (!uploadError) {
+        if (uploadError) {
+          console.warn(`Supabase storage upload error for page ${i + 1}:`, uploadError);
+        } else {
           storagePaths.push(filePath);
         }
       }
@@ -71,13 +71,33 @@ export async function POST(request: NextRequest) {
 
     // 4. Create reports table row with status "processing"
     if (supabase) {
-      await supabase.from("reports").insert({
+      try {
+        await supabase.from("profiles").upsert(
+          {
+            id: userId,
+            full_name: "Debug User",
+            language: "en",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+      } catch (profileErr) {
+        console.warn("Could not upsert debug profile:", profileErr);
+      }
+
+      const { error: insertError } = await supabase.from("reports").insert({
         id: reportId,
         user_id: userId,
         title: "Lab Report",
         status: "processing",
         storage_file_paths: storagePaths,
       });
+
+      if (insertError) {
+        console.error("Supabase insert report error in /api/reports/extract:", insertError);
+      } else {
+        console.log(`Report row ${reportId} created in 'processing' status`);
+      }
     }
 
     // 5. Check SHA-256 cache or invoke LLM Pass 1 Extraction
@@ -97,14 +117,19 @@ export async function POST(request: NextRequest) {
 
     // 6. Update database row with extracted result
     if (supabase) {
-      await supabase
+      const { error: updateError } = await supabase
         .from("reports")
         .update({
           status: "extracted",
           report_type: "report_type" in validated ? validated.report_type : null,
           extracted_data: JSON.parse(JSON.stringify(validated)),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", reportId);
+
+      if (updateError) {
+        console.error("Supabase update report error in /api/reports/extract:", updateError);
+      }
     }
 
     return NextResponse.json({

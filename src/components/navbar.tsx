@@ -60,15 +60,11 @@ export function Navbar() {
           <Link
             href="/admin/usage"
             className="flex items-center gap-1 rounded-full bg-slate-100 hover:bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors"
-            title="View Free-Tier Gemini Usage"
+            title="View System Usage & Quota"
           >
             <Cpu className="h-3.5 w-3.5 text-teal-600" />
             <span className="hidden md:inline">Quota</span>
           </Link>
-
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-            No Auth (Debug)
-          </span>
         </div>
       </div>
     </header>

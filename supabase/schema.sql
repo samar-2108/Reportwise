@@ -7,7 +7,7 @@ create extension if not exists "uuid-ossp";
 
 -- 2. PROFILES TABLE
 create table if not exists public.profiles (
-  id text primary key default 'debug-user',
+  id text primary key default 'd3b00000-0000-4000-a000-000000000000',
   email text,
   full_name text,
   age integer check (age is null or (age >= 0 and age <= 125)),
@@ -27,7 +27,7 @@ create index if not exists idx_profiles_email on public.profiles(email);
 -- Stores uploaded medical reports, extraction states, and AI interpretations
 create table if not exists public.reports (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null default 'debug-user',
+  user_id text not null default 'd3b00000-0000-4000-a000-000000000000',
   title text not null default 'Lab Report',
   report_date date,
   report_type text,

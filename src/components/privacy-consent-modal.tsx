@@ -27,14 +27,14 @@ export function PrivacyConsentModal({ isOpen, onConsent, onCancel }: PrivacyCons
           </div>
         </div>
 
-        {/* Required Google Gemini Free-Tier Notice */}
+        {/* Medical AI Data Processing Notice */}
         <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-900 space-y-2">
           <p className="font-semibold flex items-center gap-1.5 text-amber-950">
             <AlertTriangle className="h-4 w-4 text-amber-700" />
-            AI Service Data Use Notice (Google Gemini):
+            AI Service Data Processing Notice:
           </p>
           <p className="leading-relaxed">
-            Your report is processed by a third-party AI service (Google Gemini). Do not upload reports containing information you are not comfortable sharing. Remove your name, phone number, and ID numbers where possible.
+            Your report is processed by a secure automated medical AI service. Do not upload reports containing information you are not comfortable sharing. Remove your name, phone number, and ID numbers where possible.
           </p>
         </div>
 

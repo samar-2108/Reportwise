@@ -95,7 +95,7 @@ export const translations: Record<Language, Translations> = {
       upload: "Analyze Report",
       history: "Past Reports",
       settings: "Privacy & Settings",
-      admin: "Gemini Quota",
+      admin: "System Quota",
     },
     upload: {
       title: "Upload or Photograph Your Lab Report",

@@ -3,7 +3,7 @@ import { getLLMProvider, QuotaExceededError } from "@/lib/llm";
 import { INTERPRETATION_SYSTEM_PROMPT, buildInterpretationUserPrompt } from "@/prompts/interpretation";
 import { InterpretationResultSchema } from "@/lib/schemas/interpretation";
 import { evaluateAllTests } from "@/lib/medical/deterministic-check";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient, DEBUG_USER_ID, ensureDebugUser } from "@/lib/supabase/admin";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
 import { reportCache, computeInputSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
@@ -17,16 +17,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No confirmed test values provided" }, { status: 400 });
     }
 
-    // 1. Debug mode: authentication bypassed
-    const userId = "debug-user";
-    let supabase = null;
+    // 1. Debug mode: authentication bypassed using provisioned debug user UUID
+    const userId = DEBUG_USER_ID;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await ensureDebugUser(supabase);
+    }
     const keepOriginalFiles = false;
 
-    try {
-      supabase = await getSupabaseServerClient();
-    } catch {
-      // Demo / unconfigured Supabase mode
-    }
+    // Validate that reportId is a valid UUID, otherwise generate a fresh valid UUID for Postgres
+    const isValidUUID = (str: unknown): str is string =>
+      typeof str === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    const finalReportId = isValidUUID(reportId) ? reportId : crypto.randomUUID();
 
     // 2. Deterministic evaluation layer
     const deterministicEvaluation = evaluateAllTests(tests);
@@ -181,31 +185,63 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Update Database Record in debug mode
-    if (supabase && reportId) {
-      await supabase
+    // 5. Update/Upsert Database Record in debug mode
+    if (supabase) {
+      try {
+        await supabase.from("profiles").upsert(
+          {
+            id: userId,
+            full_name: "Debug User",
+            language: userProfile?.language || "en",
+            diet_preference: userProfile?.dietPreference || "veg",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+      } catch (profileErr) {
+        console.warn("Could not upsert debug profile:", profileErr);
+      }
+
+      const { error: upsertError } = await supabase
         .from("reports")
-        .update({
-          status: "completed",
-          confirmed_data: JSON.parse(JSON.stringify(deterministicEvaluation.tests)),
-          analysis_data: JSON.parse(JSON.stringify(interpretation)),
-        })
-        .eq("id", reportId);
+        .upsert(
+          {
+            id: finalReportId,
+            user_id: userId,
+            title: reportType || "Lab Report",
+            report_type: reportType || "Lab Report",
+            status: "completed",
+            confirmed_data: JSON.parse(JSON.stringify(deterministicEvaluation.tests)),
+            analysis_data: JSON.parse(JSON.stringify(interpretation)),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+
+      if (upsertError) {
+        console.error("Supabase reports upsert error in /api/reports/analyze:", upsertError);
+      } else {
+        console.log(`Successfully saved report ${finalReportId} to Supabase`);
+      }
 
       // Auto-delete original files after processing unless user opted to keep them
       if (!keepOriginalFiles) {
-        const { data: reportRow } = await supabase
-          .from("reports")
-          .select("storage_file_paths")
-          .eq("id", reportId)
-          .single();
-
-        if (reportRow && reportRow.storage_file_paths?.length) {
-          await supabase.storage.from("reports").remove(reportRow.storage_file_paths);
-          await supabase
+        try {
+          const { data: reportRow } = await supabase
             .from("reports")
-            .update({ storage_file_paths: [] })
-            .eq("id", reportId);
+            .select("storage_file_paths")
+            .eq("id", finalReportId)
+            .single();
+
+          if (reportRow && reportRow.storage_file_paths?.length) {
+            await supabase.storage.from("reports").remove(reportRow.storage_file_paths);
+            await supabase
+              .from("reports")
+              .update({ storage_file_paths: [] })
+              .eq("id", finalReportId);
+          }
+        } catch (cleanupErr) {
+          console.warn("Could not clean up storage files:", cleanupErr);
         }
       }
 
@@ -214,7 +250,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      reportId: reportId || `demo-${Date.now()}`,
+      reportId: finalReportId,
       reportType: reportType || "Lab Report",
       hasCriticalValues: hasCritical,
       confirmedTests: deterministicEvaluation.tests,

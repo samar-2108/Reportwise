@@ -108,7 +108,7 @@ export default function AdminUsagePage() {
             </Link>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
               <Cpu className="h-6 w-6 text-teal-600" />
-              Gemini API Usage & Free-Tier Quota Monitor
+              AI API Usage & Daily Quota Monitor
             </h1>
             <p className="text-xs text-slate-500 mt-1">
               Internal diagnostic dashboard tracking daily LLM consumption, caching efficiency, and rate limits.
@@ -126,7 +126,7 @@ export default function AdminUsagePage() {
             </button>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Provider: {data?.env?.provider.toUpperCase() || "GEMINI"}
+              Provider: {data?.env?.provider.toUpperCase() || "ACTIVE"}
             </span>
           </div>
         </div>
@@ -168,9 +168,9 @@ export default function AdminUsagePage() {
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="text-sm font-semibold text-slate-900">Estimated Free Tier Daily Quota</h2>
+                  <h2 className="text-sm font-semibold text-slate-900">Estimated Daily Quota Baseline</h2>
                   <p className="text-xs text-slate-500">
-                    Google AI Studio free tier baseline (~1,500 requests per day for Gemini Flash)
+                    Daily operational quota allowance (~1,500 requests per day)
                   </p>
                 </div>
                 <span className="text-xs font-semibold text-slate-700">
@@ -202,7 +202,7 @@ export default function AdminUsagePage() {
             <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-6 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <h3 className="text-sm font-bold text-teal-950 flex items-center gap-2">
-                  <span>🛠️ Active User Daily Limit (Debug Mode)</span>
+                  <span>🛠️ Active User Daily Limit</span>
                 </h3>
                 <p className="text-xs text-teal-800 mt-1">
                   Current usage: <strong>{data?.userCap?.current ?? 0}</strong> of <strong>{data?.userCap?.limit ?? data?.env?.maxPerUserPerDay ?? 15}</strong> analyses used today ({data?.userCap?.remaining ?? 15} remaining).
@@ -226,13 +226,13 @@ export default function AdminUsagePage() {
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-slate-500">Pass 1 Vision Model:</span>
                   <p className="font-mono font-medium text-slate-800 mt-0.5">
-                    {data?.env?.modelExtract || "gemini-2.5-flash"}
+                    {data?.env?.modelExtract || "Vision Optical Model"}
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-slate-500">Pass 2 Interpretation Model:</span>
                   <p className="font-mono font-medium text-slate-800 mt-0.5">
-                    {data?.env?.modelInterpret || "gemini-2.5-flash"}
+                    {data?.env?.modelInterpret || "Clinical Plain-Language Model"}
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
