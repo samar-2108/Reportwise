@@ -1,48 +1,72 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { Database } from "@/types/database";
 
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+export async function GET(request: NextRequest) {
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get("code");
+  const next = requestUrl.searchParams.get("next") ?? "/";
 
-  if (code) {
-    const supabase = await getSupabaseServerClient();
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-    if (!error && data?.user) {
-      // Ensure profile row exists for this authenticated Google user
-      try {
-        await supabase.from("profiles").upsert(
-          {
-            id: data.user.id,
-            email: data.user.email ?? null,
-            full_name:
-              data.user.user_metadata?.full_name ||
-              data.user.user_metadata?.name ||
-              data.user.email?.split("@")[0] ||
-              "Patient",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
-      } catch (profileErr) {
-        console.warn("Auth callback profile upsert warning:", profileErr);
-      }
-
-      const forwardedHost = request.headers.get("x-forwarded-host");
-      const isLocalEnv = process.env.NODE_ENV === "development";
-      if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`);
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`);
-      } else {
-        return NextResponse.redirect(`${origin}${next}`);
-      }
-    }
-
-    console.error("Auth callback session exchange error:", error);
+  // Determine origin, accounting for proxies/custom domains
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const isLocalEnv = process.env.NODE_ENV === "development";
+  let targetOrigin = requestUrl.origin;
+  if (!isLocalEnv && forwardedHost) {
+    targetOrigin = `https://${forwardedHost}`;
   }
 
-  return NextResponse.redirect(`${origin}/auth?error=auth_callback_failed`);
+  const destination = `${targetOrigin}${next.startsWith("/") ? next : "/"}`;
+
+  if (code) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseAnonKey) {
+      // Create response first so session cookies are written directly to it
+      const response = NextResponse.redirect(destination);
+
+      const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
+        },
+      });
+
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+      if (!error && data?.user) {
+        // Upsert user profile
+        try {
+          await supabase.from("profiles").upsert(
+            {
+              id: data.user.id,
+              email: data.user.email ?? null,
+              full_name:
+                data.user.user_metadata?.full_name ||
+                data.user.user_metadata?.name ||
+                data.user.email?.split("@")[0] ||
+                "Patient",
+              language: "en",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" }
+          );
+        } catch (profileErr) {
+          console.warn("Auth callback profile upsert warning:", profileErr);
+        }
+
+        return response;
+      }
+
+      console.error("Auth callback code exchange error:", error);
+    }
+  }
+
+  return NextResponse.redirect(`${targetOrigin}/auth?error=auth_callback_failed`);
 }

@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
-import { Activity, ArrowLeft, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
+import { Activity, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/context";
 
 function GoogleIcon() {
@@ -32,14 +31,22 @@ function GoogleIcon() {
 }
 
 function AuthContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
   const errorParam = searchParams.get("error");
-  const { signInWithGoogle } = useAuth();
+  const { user, loading: authLoading, signInWithGoogle } = useAuth();
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(
     errorParam ? "Failed to sign in with Google. Please try again." : null
   );
+
+  // When user is authenticated, immediately forward to / (or destination)
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(next.startsWith("/") ? next : "/");
+    }
+  }, [user, authLoading, router, next]);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -52,6 +59,19 @@ function AuthContent() {
       setSigningIn(false);
     }
   };
+
+  // If already logged in, show redirecting state
+  if (user) {
+    return (
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm space-y-3">
+        <Loader2 className="h-7 w-7 animate-spin text-teal-600 mx-auto" />
+        <div className="space-y-0.5">
+          <h2 className="text-sm font-bold text-slate-800">Redirecting to ReportWise...</h2>
+          <p className="text-xs text-slate-500">Authenticated successfully</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
