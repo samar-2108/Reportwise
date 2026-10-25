@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { UploadZone } from "@/components/upload/upload-zone";
 import { EditableConfirmationTable } from "@/components/upload/editable-confirmation-table";
@@ -334,6 +335,7 @@ export default function Home() {
         </div>
       </main>
 
+      <Footer />
       <DisclaimerBanner />
 
       <PrivacyConsentModal

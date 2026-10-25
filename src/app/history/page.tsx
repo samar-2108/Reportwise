@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { useLanguage } from "@/lib/i18n/context";
 import {
@@ -272,6 +273,7 @@ export default function HistoryPage() {
         </div>
       </main>
 
+      <Footer />
       <DisclaimerBanner />
     </div>
   );

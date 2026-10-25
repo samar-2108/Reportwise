@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { useLanguage } from "@/lib/i18n/context";
 import {
@@ -272,6 +273,7 @@ export default function SettingsPage() {
         </div>
       </main>
 
+      <Footer />
       <DisclaimerBanner />
     </div>
   );

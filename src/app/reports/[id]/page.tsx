@@ -3,18 +3,12 @@
 import { use, useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { ResultsDashboard } from "@/components/results/results-dashboard";
 import { ConfirmedItem } from "@/types/report";
 import { InterpretationResult } from "@/lib/schemas/interpretation";
 import { ArrowLeft, Loader2, FileQuestion } from "lucide-react";
-import {
-  MOCK_EXTRACTION_CBC,
-  MOCK_INTERPRETATION_CBC,
-  MOCK_EXTRACTION_CRITICAL,
-  MOCK_INTERPRETATION_CRITICAL,
-} from "@/lib/fixtures/sample-reports";
-import { evaluateAllTests } from "@/lib/medical/deterministic-check";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -67,28 +61,8 @@ function ReportDetailContent({ params }: PageProps) {
 
       if (ignore) return;
 
-      // Fallback for demo ID
-      if (id.includes("critical")) {
-        const evaluated = evaluateAllTests(MOCK_EXTRACTION_CRITICAL.tests);
-        setReport({
-          id,
-          reportType: "Comprehensive Metabolic & Glucose Panel",
-          reportDate: "21 Oct 2026",
-          tests: evaluated.tests,
-          analysis: MOCK_INTERPRETATION_CRITICAL,
-          hasCriticalValues: true,
-        });
-      } else {
-        const evaluated = evaluateAllTests(MOCK_EXTRACTION_CBC.tests);
-        setReport({
-          id,
-          reportType: "Complete Blood Count (CBC)",
-          reportDate: "14 Oct 2026",
-          tests: evaluated.tests,
-          analysis: MOCK_INTERPRETATION_CBC,
-          hasCriticalValues: false,
-        });
-      }
+      // Report not found in database
+      setReport(null);
       setLoading(false);
     }
 
@@ -144,6 +118,7 @@ function ReportDetailContent({ params }: PageProps) {
         </div>
       </main>
 
+      <Footer />
       <DisclaimerBanner />
     </div>
   );

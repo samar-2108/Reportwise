@@ -8,18 +8,12 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
-  AlertTriangle,
   Scissors,
   Sparkles,
   FileUp,
 } from "lucide-react";
 import { compressImageClientSide } from "@/lib/utils/image-compression";
 import { useLanguage } from "@/lib/i18n/context";
-import {
-  MOCK_EXTRACTION_CBC,
-  MOCK_EXTRACTION_LIPID,
-  MOCK_EXTRACTION_CRITICAL,
-} from "@/lib/fixtures/sample-reports";
 import { ExtractionResult } from "@/lib/schemas/extraction";
 import { useAuth } from "@/lib/auth/context";
 
@@ -143,21 +137,6 @@ export function UploadZone({ onExtractionComplete, onExtractionStart, onError }:
       console.error("Extraction error:", err);
       onError(err instanceof Error ? err.message : "Failed to extract values from report.");
     }
-  };
-
-  // Instant prefill with sample fixtures for testing without camera
-  const loadSampleFixture = (type: "cbc" | "lipid" | "critical") => {
-    onExtractionStart();
-    setTimeout(() => {
-      const mockId = crypto.randomUUID();
-      if (type === "cbc") {
-        onExtractionComplete({ ...MOCK_EXTRACTION_CBC, reportId: mockId } as unknown as ExtractionResult);
-      } else if (type === "lipid") {
-        onExtractionComplete({ ...MOCK_EXTRACTION_LIPID, reportId: mockId } as unknown as ExtractionResult);
-      } else {
-        onExtractionComplete({ ...MOCK_EXTRACTION_CRITICAL, reportId: mockId } as unknown as ExtractionResult);
-      }
-    }, 600);
   };
 
   return (
@@ -333,37 +312,6 @@ export function UploadZone({ onExtractionComplete, onExtractionStart, onError }:
         </div>
       )}
 
-      {/* Instant 1-Click Sample Fixtures */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-xs space-y-3">
-        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-          <Sparkles className="h-3.5 w-3.5 text-teal-600" />
-          {t.upload.selectSample}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => loadSampleFixture("cbc")}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-800 hover:border-teal-200 transition-colors"
-          >
-            📋 {t.upload.loadCbc}
-          </button>
-          <button
-            type="button"
-            onClick={() => loadSampleFixture("lipid")}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-800 hover:border-teal-200 transition-colors"
-          >
-            🧪 {t.upload.loadLipid}
-          </button>
-          <button
-            type="button"
-            onClick={() => loadSampleFixture("critical")}
-            className="rounded-lg border border-rose-200 bg-rose-50/60 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 transition-colors flex items-center gap-1"
-          >
-            <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
-            {t.upload.loadCritical}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

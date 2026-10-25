@@ -165,6 +165,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      feedback: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          user_email: string | null;
+          category: string;
+          rating: string | null;
+          message: string;
+          recipient_email: string;
+          status: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          user_email?: string | null;
+          category: string;
+          rating?: string | null;
+          message: string;
+          recipient_email?: string;
+          status?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          user_email?: string | null;
+          category?: string;
+          rating?: string | null;
+          message?: string;
+          recipient_email?: string;
+          status?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -179,4 +215,5 @@ export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type ReportRow = Database["public"]["Tables"]["reports"]["Row"];
 export type ChatConversationRow = Database["public"]["Tables"]["chat_conversations"]["Row"];
 export type ChatMessageRow = Database["public"]["Tables"]["chat_messages"]["Row"];
+export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 

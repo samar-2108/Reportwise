@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { Activity, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/context";
@@ -182,6 +183,7 @@ export default function AuthPage() {
         </Suspense>
       </main>
 
+      <Footer />
       <DisclaimerBanner />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShieldAlert, Scissors, Check, EyeOff, AlertTriangle } from "lucide-react";
 
 interface PrivacyConsentModalProps {
@@ -12,11 +12,46 @@ interface PrivacyConsentModalProps {
 export function PrivacyConsentModal({ isOpen, onConsent, onCancel }: PrivacyConsentModalProps) {
   const [acknowledgedCrop, setAcknowledgedCrop] = useState(false);
 
+  // Lock body & root document scroll when consent modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalDocOverflow = document.documentElement.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+
+    // Prevent layout shift from scrollbar disappearing
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalBodyOverflow;
+      document.documentElement.style.overflow = originalDocOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 space-y-5">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto overscroll-contain"
+      onWheel={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+        }
+      }}
+      onTouchMove={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 space-y-5 overscroll-contain my-auto">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 shrink-0">
             <ShieldAlert className="h-5 w-5" />
@@ -91,4 +126,3 @@ export function PrivacyConsentModal({ isOpen, onConsent, onCancel }: PrivacyCons
     </div>
   );
 }
-

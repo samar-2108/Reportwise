@@ -345,3 +345,34 @@ drop policy if exists "Users can delete own messages" on public.chat_messages;
 create policy "Users can delete own messages"
   on public.chat_messages for delete
   using (auth.uid() = user_id);
+
+-- ==============================================================================
+-- 9. USER FEEDBACK TABLE
+-- ==============================================================================
+create table if not exists public.feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  user_email text,
+  category text not null default 'general',
+  rating text,
+  message text not null,
+  recipient_email text not null default 'samarmehta845@gmail.com',
+  status text not null default 'new',
+  created_at timestamptz not null default now()
+);
+
+-- RLS: Enable row level security
+alter table public.feedback enable row level security;
+
+-- Policies for feedback: Anyone (authenticated or guest) can submit feedback
+drop policy if exists "Anyone can submit feedback" on public.feedback;
+create policy "Anyone can submit feedback"
+  on public.feedback for insert
+  with check (true);
+
+-- Users can view their own submitted feedback
+drop policy if exists "Users can view own feedback" on public.feedback;
+create policy "Users can view own feedback"
+  on public.feedback for select
+  using (auth.uid() = user_id);
+
