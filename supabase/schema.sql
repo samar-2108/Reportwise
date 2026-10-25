@@ -203,3 +203,145 @@ create policy "Users can delete own report files"
     bucket_id = 'reports' and
     (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- ==============================================================================
+-- 8. ASK REPORTWISE CHAT CONVERSATIONS & MESSAGES (USER-SCOPED)
+-- ==============================================================================
+
+-- Conversations Table
+create table if not exists public.chat_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null default 'New Chat',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_chat_conversations_user_id on public.chat_conversations(user_id);
+create index if not exists idx_chat_conversations_updated_at on public.chat_conversations(updated_at desc);
+
+-- Chat Messages Table
+create table if not exists public.chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid references public.chat_conversations(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant', 'system')),
+  content text not null,
+  feedback text check (feedback is null or feedback in ('helpful', 'unhelpful')),
+  created_at timestamptz not null default now()
+);
+
+-- Migration logic for legacy report-scoped chat_messages if they exist:
+do $$
+begin
+  -- Check if legacy report_id column exists
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' and table_name = 'chat_messages' and column_name = 'report_id'
+  ) then
+    -- Make report_id nullable
+    alter table public.chat_messages alter column report_id drop not null;
+
+    -- Ensure conversation_id column exists
+    if not exists (
+      select 1 from information_schema.columns 
+      where table_schema = 'public' and table_name = 'chat_messages' and column_name = 'conversation_id'
+    ) then
+      alter table public.chat_messages add column conversation_id uuid references public.chat_conversations(id) on delete cascade;
+    end if;
+
+    -- Migrate existing messages into one conversation per old report
+    insert into public.chat_conversations (id, user_id, title, created_at, updated_at)
+    select 
+      gen_random_uuid(),
+      m.user_id,
+      coalesce(r.title, 'Report Discussion'),
+      min(m.created_at),
+      max(m.created_at)
+    from public.chat_messages m
+    left join public.reports r on r.id = m.report_id
+    where m.conversation_id is null and m.report_id is not null
+    group by m.user_id, m.report_id, r.title;
+
+    -- Link messages to the newly created conversation
+    update public.chat_messages m
+    set conversation_id = c.id
+    from public.chat_conversations c
+    where m.conversation_id is null 
+      and m.user_id = c.user_id;
+
+    -- Drop report_id or keep it nullable
+    alter table public.chat_messages alter column report_id drop not null;
+  end if;
+exception
+  when others then
+    null;
+end $$;
+
+-- Enforce not null on conversation_id for clean schemas if safe
+do $$
+begin
+  if not exists (
+    select 1 from public.chat_messages where conversation_id is null
+  ) then
+    alter table public.chat_messages alter column conversation_id set not null;
+  end if;
+exception
+  when others then
+    null;
+end $$;
+
+create index if not exists idx_chat_messages_conversation_id on public.chat_messages(conversation_id, created_at asc);
+create index if not exists idx_chat_messages_user_id on public.chat_messages(user_id);
+
+-- Updated_at trigger for conversations
+drop trigger if exists set_chat_conversations_updated_at on public.chat_conversations;
+create trigger set_chat_conversations_updated_at
+  before update on public.chat_conversations
+  for each row execute function public.set_updated_at();
+
+-- RLS: Enable row level security
+alter table public.chat_conversations enable row level security;
+alter table public.chat_messages enable row level security;
+
+-- Policies for chat_conversations
+drop policy if exists "Users can view own conversations" on public.chat_conversations;
+create policy "Users can view own conversations"
+  on public.chat_conversations for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own conversations" on public.chat_conversations;
+create policy "Users can insert own conversations"
+  on public.chat_conversations for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own conversations" on public.chat_conversations;
+create policy "Users can update own conversations"
+  on public.chat_conversations for update
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own conversations" on public.chat_conversations;
+create policy "Users can delete own conversations"
+  on public.chat_conversations for delete
+  using (auth.uid() = user_id);
+
+-- Policies for chat_messages
+drop policy if exists "Users can view own messages" on public.chat_messages;
+create policy "Users can view own messages"
+  on public.chat_messages for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own messages" on public.chat_messages;
+create policy "Users can insert own messages"
+  on public.chat_messages for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own messages" on public.chat_messages;
+create policy "Users can update own messages"
+  on public.chat_messages for update
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own messages" on public.chat_messages;
+create policy "Users can delete own messages"
+  on public.chat_messages for delete
+  using (auth.uid() = user_id);

@@ -47,12 +47,20 @@ export async function POST() {
     // 3. Delete all reports
     await supabase.from("reports").delete().eq("user_id", userId);
 
-    // 4. Delete profile data
+    // 4. Delete all chat conversations & messages
+    try {
+      await supabase.from("chat_messages").delete().eq("user_id", userId);
+      await supabase.from("chat_conversations").delete().eq("user_id", userId);
+    } catch (chatErr) {
+      console.warn("Could not delete chat data:", chatErr);
+    }
+
+    // 5. Delete profile data
     await supabase.from("profiles").delete().eq("id", userId);
 
     return NextResponse.json({
       success: true,
-      message: "All personal reports and profile data have been permanently deleted.",
+      message: "All personal reports, chat conversations, and profile data have been permanently deleted.",
     });
   } catch (error: unknown) {
     console.error("Delete all data error:", error);

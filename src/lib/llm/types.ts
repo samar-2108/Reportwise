@@ -20,6 +20,11 @@ export class QuotaExceededError extends Error {
   }
 }
 
+export interface ChatMessageInput {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
 /**
  * Universal LLM Provider interface allowing provider interchangeability (Gemini, Mock, etc.)
  */
@@ -37,5 +42,13 @@ export interface LLMProvider {
     systemPrompt: string,
     schema: z.ZodType<T>
   ): Promise<T>;
+
+  /**
+   * Chat: Conversational response generation with system instructions and history
+   */
+  generateChatResponse(
+    messages: ChatMessageInput[],
+    systemPrompt: string
+  ): Promise<string>;
 }
 

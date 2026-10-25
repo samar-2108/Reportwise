@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ProfileRow } from "@/types/database";
@@ -25,7 +25,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [loading, setLoading] = useState(true);
-  const [, startTransition] = useTransition();
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -37,21 +36,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } = await supabase.auth.getUser();
 
         setUser(currentUser ?? null);
+        // Unblock loading state immediately so pages render without buffering
+        setLoading(false);
 
         if (currentUser) {
-          const { data: userProfile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", currentUser.id)
-            .maybeSingle();
+          try {
+            const { data: userProfile } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", currentUser.id)
+              .maybeSingle();
 
-          setProfile(userProfile);
+            setProfile(userProfile);
+          } catch {
+            // Profile fetch error is non-fatal
+          }
         } else {
           setProfile(null);
         }
       } catch (err) {
         console.warn("Error fetching current user session:", err);
-      } finally {
         setLoading(false);
       }
     }
@@ -62,25 +66,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      startTransition(() => {
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      // Unblock immediately on any session update
+      setLoading(false);
 
-        if (!currentUser) {
-          setProfile(null);
-          setLoading(false);
+      if (currentUser) {
+        try {
+          const { data: userProfile } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", currentUser.id)
+            .maybeSingle();
+
+          setProfile(userProfile);
+        } catch {
+          // Profile fetch error is non-fatal
         }
-      });
-
-      if (session?.user) {
-        const { data: userProfile } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        setProfile(userProfile);
-        setLoading(false);
+      } else {
+        setProfile(null);
       }
     });
 
@@ -142,4 +146,3 @@ export function useAuth() {
   }
   return context;
 }
-

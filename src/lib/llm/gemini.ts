@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { LLMFile, LLMProvider, QuotaExceededError } from "./types";
+import { ChatMessageInput, LLMFile, LLMProvider, QuotaExceededError } from "./types";
 import { getServerEnv } from "@/lib/env";
 import { computeFilesSha256, computeInputSha256, reportCache } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
@@ -323,5 +323,48 @@ export class GeminiProvider implements LLMProvider {
 
     reportCache.setInterpretation(inputHash, validated.data);
     return validated.data;
+  }
+
+  /**
+   * CHAT: Conversational Healthcare Q&A
+   */
+  async generateChatResponse(
+    messages: ChatMessageInput[],
+    systemPrompt: string
+  ): Promise<string> {
+    const env = getServerEnv();
+    const model = env.GEMINI_MODEL_INTERPRET;
+
+    const contents = messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+
+    if (contents.length === 0) {
+      return "Hello! How can I help you understand your medical reports or answer health questions today?";
+    }
+
+    const callModel = async () => {
+      const response = await this.ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.3,
+        },
+      });
+
+      return response.text?.trim() || "";
+    };
+
+    try {
+      const text = await this.executeWithRetry("interpretation", () => callModel());
+      return text;
+    } catch (err: unknown) {
+      if (err instanceof QuotaExceededError) throw err;
+      throw new Error(`Failed to generate chat response: ${formatErrorMessage(err)}`);
+    }
   }
 }

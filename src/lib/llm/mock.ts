@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LLMFile, LLMProvider, QuotaExceededError } from "./types";
+import { ChatMessageInput, LLMFile, LLMProvider, QuotaExceededError } from "./types";
 import {
   MOCK_EXTRACTION_CBC,
   MOCK_EXTRACTION_CRITICAL,
@@ -80,5 +80,23 @@ export class MockLLMProvider implements LLMProvider {
       throw new Error(`Mock interpretation failed schema validation: ${parsed.error.message}`);
     }
     return parsed.data;
+  }
+
+  async generateChatResponse(
+    messages: ChatMessageInput[],
+    _systemPrompt: string
+  ): Promise<string> {
+    void _systemPrompt;
+    if (this.options.forceError === "quota") {
+      throw new QuotaExceededError();
+    }
+    const lastMsg = messages[messages.length - 1]?.content.toLowerCase() || "";
+    if (lastMsg.includes("hemoglobin")) {
+      return "Hemoglobin is an iron-rich protein in red blood cells that carries oxygen throughout your body. Normal adult levels are typically 13.8–17.2 g/dL for males and 12.1–15.1 g/dL for females. Nutrient-rich foods like spinach, lentils, and beetroot can support healthy levels.";
+    }
+    if (lastMsg.includes("cholesterol")) {
+      return "Total cholesterol under 200 mg/dL is generally considered desirable. Maintaining a balanced diet with whole grains, legumes, and regular physical activity helps support healthy lipid levels.";
+    }
+    return "I am Ask ReportWise, your medical report assistant. I can explain lab tests and answer wellness questions. Please consult your physician for official medical diagnosis.";
   }
 }

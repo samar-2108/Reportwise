@@ -253,3 +253,16 @@ Follow these steps to manually test the complete user journey:
   - Visit `/history` to review recorded past reports.
   - Visit `/settings` to test saving dietary preferences and testing **"Delete All My Data"**.
   - Visit `/admin/usage` to inspect live Gemini calls, cache hits, and daily quota consumption.
+
+- [ ] **7. "Ask ReportWise" Global AI Chatbot:**
+  - Verify floating button appears across all authenticated pages (`/`, `/history`, `/reports/[id]`, `/settings`) and is hidden only on `/auth`.
+  - Press `Ctrl/Cmd+K` or `/` (or click button) to open the side panel overlay on desktop or bottom sheet on mobile. Verify it doesn't cover sticky elements.
+  - Test asking a general health question with no report attached ("How do I read a blood test report?").
+  - Test asking about "my report" when none is attached: verify the assistant informs you no report is attached and points to the "Attach report" button.
+  - Click **"Attach report"** and select 1–3 reports from the picker. Verify removable chips appear above the input.
+  - Ask a question about the attached report: verify the assistant cites the report name and date and answers accurately without hallucinating.
+  - Visit `/reports/[id]`: open chat and verify the smart suggestion chip *"Attach this report"* appears.
+  - Test natural language attachment: ask *"what does my latest report say?"* and verify the system automatically resolves and attaches your most recent report with a visible chip.
+  - Test conversation persistence: navigate between pages (e.g. from `/` to `/history` to `/settings`) with the chat open, verifying the conversation and panel state remain active.
+  - Test past conversations drawer: click the clock icon, review conversation history, rename a conversation, and test creating a *"New Chat"*.
+  - Visit `/settings` and test *"Delete All My Data"*: verify conversations and messages are purged alongside reports.

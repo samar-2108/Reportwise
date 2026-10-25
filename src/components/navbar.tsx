@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -49,11 +49,20 @@ export function Navbar() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
-  // Close mobile drawer and dropdown on route transition
+  // Close mobile drawer and dropdown on route navigation (popstate)
   useEffect(() => {
+    const handlePopState = () => {
+      setMobileMenuOpen(false);
+      setProfileDropdownOpen(false);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const closeMenus = useCallback(() => {
     setMobileMenuOpen(false);
     setProfileDropdownOpen(false);
-  }, [pathname]);
+  }, []);
 
   // Click outside listener for profile dropdown
   useEffect(() => {
@@ -239,6 +248,7 @@ export function Navbar() {
 
                       <Link
                         href="/history"
+                        onClick={closeMenus}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                       >
                         <History className="h-3.5 w-3.5 text-teal-600" />
@@ -247,6 +257,7 @@ export function Navbar() {
 
                       <Link
                         href="/settings"
+                        onClick={closeMenus}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                       >
                         <Settings className="h-3.5 w-3.5 text-teal-600" />
@@ -354,6 +365,7 @@ export function Navbar() {
           <nav className="flex flex-col space-y-1.5">
             <Link
               href="/"
+              onClick={closeMenus}
               className={`flex items-center justify-between rounded-xl p-3 text-xs font-semibold transition-colors ${
                 isHomeActive
                   ? "bg-teal-50 border border-teal-200/80 text-teal-950 font-bold"
@@ -376,6 +388,7 @@ export function Navbar() {
 
             <Link
               href="/history"
+              onClick={closeMenus}
               className={`flex items-center justify-between rounded-xl p-3 text-xs font-semibold transition-colors ${
                 isHistoryActive
                   ? "bg-teal-50 border border-teal-200/80 text-teal-950 font-bold"
@@ -398,6 +411,7 @@ export function Navbar() {
 
             <Link
               href="/settings"
+              onClick={closeMenus}
               className={`flex items-center justify-between rounded-xl p-3 text-xs font-semibold transition-colors ${
                 isSettingsActive
                   ? "bg-teal-50 border border-teal-200/80 text-teal-950 font-bold"
@@ -420,6 +434,7 @@ export function Navbar() {
 
             <Link
               href="/admin/usage"
+              onClick={closeMenus}
               className={`flex items-center justify-between rounded-xl p-3 text-xs font-semibold transition-colors ${
                 isQuotaActive
                   ? "bg-teal-50 border border-teal-200/80 text-teal-950 font-bold"

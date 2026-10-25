@@ -13,7 +13,6 @@ import {
   Utensils,
   AlertTriangle,
   LogOut,
-  User,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/context";

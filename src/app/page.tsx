@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { UploadZone } from "@/components/upload/upload-zone";
@@ -32,7 +31,6 @@ import {
 type FlowStage = "upload" | "extracting" | "confirming" | "analyzing" | "results";
 
 export default function Home() {
-  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { language, t } = useLanguage();
   const [stage, setStage] = useState<FlowStage>("upload");
@@ -52,9 +50,9 @@ export default function Home() {
   // Require authentication: redirect unauthenticated users to /auth immediately
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/auth");
+      window.location.replace("/auth");
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user]);
 
   // Handlers
   const handleExtractionStart = () => {

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import tsx --test src/lib/clinical/classify.test.ts",
+    "test": "node --import tsx --test src/lib/clinical/classify.test.ts src/lib/chat/chat.test.ts",
     "test:llm": "tsx scripts/test-llm.ts"
   },
   "dependencies": {

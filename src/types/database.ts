@@ -111,6 +111,60 @@ export interface Database {
         };
         Relationships: [];
       };
+      chat_conversations: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          user_id: string;
+          role: "user" | "assistant" | "system";
+          content: string;
+          feedback: "helpful" | "unhelpful" | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          user_id: string;
+          role: "user" | "assistant" | "system";
+          content: string;
+          feedback?: "helpful" | "unhelpful" | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          conversation_id?: string;
+          user_id?: string;
+          role?: "user" | "assistant" | "system";
+          content?: string;
+          feedback?: "helpful" | "unhelpful" | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -123,4 +177,6 @@ export interface Database {
 
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type ReportRow = Database["public"]["Tables"]["reports"]["Row"];
+export type ChatConversationRow = Database["public"]["Tables"]["chat_conversations"]["Row"];
+export type ChatMessageRow = Database["public"]["Tables"]["chat_messages"]["Row"];
 

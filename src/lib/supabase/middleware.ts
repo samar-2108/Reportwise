@@ -48,16 +48,26 @@ export async function updateSession(request: NextRequest) {
     if (pathname !== "/") {
       redirectUrl.searchParams.set("next", pathname);
     }
-    return NextResponse.redirect(redirectUrl);
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    // Propagate any refreshed cookies to the redirect response
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value);
+    });
+    return redirectResponse;
   }
 
   // Redirect authenticated users visiting /auth to their destination or /
   if (user && pathname === "/auth") {
     const next = request.nextUrl.searchParams.get("next") || "/";
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = next;
+    redirectUrl.pathname = next.startsWith("/") && !next.startsWith("//") ? next : "/";
     redirectUrl.search = "";
-    return NextResponse.redirect(redirectUrl);
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    // Propagate any refreshed cookies to the redirect response
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value);
+    });
+    return redirectResponse;
   }
 
   return supabaseResponse;

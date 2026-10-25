@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { Activity, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
@@ -31,7 +31,6 @@ function GoogleIcon() {
 }
 
 function AuthContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
   const errorParam = searchParams.get("error");
@@ -41,12 +40,15 @@ function AuthContent() {
     errorParam ? "Failed to sign in with Google. Please try again." : null
   );
 
-  // When user is authenticated, immediately forward to / (or destination)
+  const destination = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+
+  // When user is authenticated, immediately hard-redirect to destination
+  // Using window.location.replace completely flushes Next.js RSC client cache and guarantees fresh session
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(next.startsWith("/") ? next : "/");
+      window.location.replace(destination);
     }
-  }, [user, authLoading, router, next]);
+  }, [user, authLoading, destination]);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -60,7 +62,7 @@ function AuthContent() {
     }
   };
 
-  // If already logged in, show redirecting state
+  // If already logged in, show redirecting state with direct link fallback
   if (user) {
     return (
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm space-y-3">
@@ -69,6 +71,15 @@ function AuthContent() {
           <h2 className="text-sm font-bold text-slate-800">Redirecting to ReportWise...</h2>
           <p className="text-xs text-slate-500">Authenticated successfully</p>
         </div>
+        <p className="text-[11px] text-slate-400 pt-1">
+          Taking longer than usual?{" "}
+          <a
+            href={destination}
+            className="text-teal-600 font-semibold underline hover:text-teal-700"
+          >
+            Click here to continue
+          </a>
+        </p>
       </div>
     );
   }
