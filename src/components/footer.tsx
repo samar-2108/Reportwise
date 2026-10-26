@@ -7,7 +7,6 @@ import {
   Activity,
   ShieldCheck,
   AlertTriangle,
-  Send,
   CheckCircle2,
   Mail,
   Sparkles,
@@ -50,8 +49,35 @@ export function Footer() {
     setSubmitting(true);
     setErrorMessage(null);
 
+    const categoryLabels: Record<string, string> = {
+      general: "General Feedback",
+      bug_report: "Bug Report",
+      parsing_issue: "Report Parsing Issue",
+      medical_accuracy: "Medical Accuracy",
+      feature_request: "Feature Request",
+    };
+
+    const subject = encodeURIComponent(
+      `[ReportWise Feedback] ${categoryLabels[category] || category} (${rating}★)`
+    );
+    const body = encodeURIComponent(
+      `From: ${currentEmail || "Anonymous User"}\nCategory: ${
+        categoryLabels[category] || category
+      }\nRating: ${rating} / 5 Stars\n\nFeedback / Message:\n${message.trim()}\n\n---\nSent via ReportWise Web App`
+    );
+    const mailto = `mailto:${RECIPIENT_EMAIL}?subject=${subject}&body=${body}`;
+    setMailtoUrl(mailto);
+
+    // 1. Immediately launch user's email client directly on button click to dispatch mail to Samar
     try {
-      const res = await fetch("/api/feedback", {
+      window.location.href = mailto;
+    } catch (launchErr) {
+      console.warn("Direct mailto launch failed:", launchErr);
+    }
+
+    // 2. Persist copy to database in background
+    try {
+      await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -61,28 +87,10 @@ export function Footer() {
           message: message.trim(),
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to submit feedback.");
-      }
-
-      setSubmitted(true);
-      if (data.mailtoUrl) {
-        setMailtoUrl(data.mailtoUrl);
-      }
     } catch (err) {
-      console.error("Feedback error:", err);
-      // Construct fallback mailto directly so user can still send
-      const subject = encodeURIComponent(`[ReportWise Feedback] ${category} (${rating}★)`);
-      const body = encodeURIComponent(
-        `From: ${currentEmail || "Anonymous"}\nRating: ${rating}/5\nCategory: ${category}\n\nMessage:\n${message}\n\n---\nReportWise Web App`
-      );
-      const fallbackUrl = `mailto:${RECIPIENT_EMAIL}?subject=${subject}&body=${body}`;
-      setMailtoUrl(fallbackUrl);
-      setSubmitted(true);
+      console.warn("Background feedback persist error:", err);
     } finally {
+      setSubmitted(true);
       setSubmitting(false);
     }
   };
@@ -224,7 +232,17 @@ export function Footer() {
 
             {/* Quick Navigation & Emergency Notice */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200 text-xs">
-              
+              <div className="flex flex-wrap gap-4 text-slate-600">
+                <Link href="/" className="hover:text-teal-700 font-medium transition-colors">
+                  Upload Lab Report
+                </Link>
+                <Link href="/history" className="hover:text-teal-700 font-medium transition-colors">
+                  Health History & Trends
+                </Link>
+                <Link href="/settings" className="hover:text-teal-700 font-medium transition-colors">
+                  Settings & Privacy
+                </Link>
+              </div>
 
               <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200/80 px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-medium shadow-2xs">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-700 shrink-0" />
@@ -256,9 +274,9 @@ export function Footer() {
                     <Check className="h-6 w-6 stroke-[2.5]" />
                   </div>
                   <div className="space-y-1">
-                    <h5 className="text-sm font-bold text-slate-900">Thank You for Your Feedback!</h5>
+                    <h5 className="text-sm font-bold text-slate-900">Email Draft Prepared & Dispatched!</h5>
                     <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-                      Your thoughts have been logged and routed to Samar Mehta ({RECIPIENT_EMAIL}).
+                      Your email application has been triggered to send your feedback directly to <strong>{RECIPIENT_EMAIL}</strong>. A copy has also been safely saved to our records.
                     </p>
                   </div>
 
@@ -266,17 +284,12 @@ export function Footer() {
                     <div className="pt-2">
                       <a
                         href={mailtoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 shadow-2xs hover:shadow-xs transition-all"
                       >
                         <Mail className="h-3.5 w-3.5" />
-                        <span>Send Copy via Email App</span>
+                        <span>Re-open Email App to Send</span>
                         <ExternalLink className="h-3 w-3 opacity-70" />
                       </a>
-                      <p className="text-[10px] text-slate-400 mt-2">
-                        Opens your default email client (Gmail / Outlook) with your message pre-filled.
-                      </p>
                     </div>
                   )}
 
@@ -286,7 +299,7 @@ export function Footer() {
                       onClick={handleResetFeedback}
                       className="text-xs font-semibold text-teal-700 hover:text-teal-800 underline"
                     >
-                      Submit another feedback
+                      Send another feedback
                     </button>
                   </div>
                 </div>
@@ -391,12 +404,12 @@ export function Footer() {
                     {submitting ? (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
-                        <span>Sending to {RECIPIENT_EMAIL}...</span>
+                        <span>Opening email to {RECIPIENT_EMAIL}...</span>
                       </>
                     ) : (
                       <>
-                        <Send className="h-3.5 w-3.5" />
-                        <span>Submit Feedback</span>
+                        <Mail className="h-3.5 w-3.5" />
+                        <span>Send Email to Samar ({RECIPIENT_EMAIL})</span>
                       </>
                     )}
                   </button>

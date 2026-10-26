@@ -3,7 +3,6 @@
 import { use, useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 import { DisclaimerBanner } from "@/components/disclaimer-banner";
 import { ResultsDashboard } from "@/components/results/results-dashboard";
 import { ConfirmedItem } from "@/types/report";
@@ -118,7 +117,6 @@ function ReportDetailContent({ params }: PageProps) {
         </div>
       </main>
 
-      <Footer />
       <DisclaimerBanner />
     </div>
   );

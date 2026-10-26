@@ -335,7 +335,7 @@ export default function Home() {
         </div>
       </main>
 
-      <Footer />
+      {stage === "upload" && <Footer />}
       <DisclaimerBanner />
 
       <PrivacyConsentModal

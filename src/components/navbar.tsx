@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  Cpu,
   History,
   Settings,
   Languages,
@@ -82,7 +81,6 @@ export function Navbar() {
   const isHistoryActive = pathname.startsWith("/history") || pathname.startsWith("/reports");
   const isSettingsActive = pathname.startsWith("/settings");
   const isHomeActive = pathname === "/";
-  const isQuotaActive = pathname.startsWith("/admin");
 
   const displayName =
     profile?.full_name ||
@@ -179,22 +177,6 @@ export function Navbar() {
             <Languages className="h-3.5 w-3.5 text-teal-600" />
             <span>{language === "en" ? "हिंदी" : "English"}</span>
           </button>
-
-          {/* System Quota (Desktop) */}
-          {user && (
-            <Link
-              href="/admin/usage"
-              className={`hidden sm:flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                isQuotaActive
-                  ? "bg-teal-50 text-teal-800 font-bold border border-teal-200/60"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-              }`}
-              title="View System Usage & Quota"
-            >
-              <Cpu className="h-3.5 w-3.5 text-teal-600" />
-              <span className="hidden md:inline">Quota</span>
-            </Link>
-          )}
 
           {/* User Auth Section (Desktop) */}
           {!authLoading && (
@@ -426,31 +408,6 @@ export function Navbar() {
                   <div className="text-slate-900 font-bold text-xs">{t.nav.settings}</div>
                   <div className="text-[11px] text-slate-500 font-normal">
                     Diet preference, auto-delete & data purge
-                  </div>
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-slate-400" />
-            </Link>
-
-            <Link
-              href="/admin/usage"
-              onClick={closeMenus}
-              className={`flex items-center justify-between rounded-xl p-3 text-xs font-semibold transition-colors ${
-                isQuotaActive
-                  ? "bg-teal-50 border border-teal-200/80 text-teal-950 font-bold"
-                  : "text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-                  <Cpu className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-slate-900 font-bold text-xs">
-                    {t.nav.admin || "System Quota"}
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-normal">
-                    Daily analyses limits & API monitor
                   </div>
                 </div>
               </div>

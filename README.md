@@ -1,6 +1,6 @@
 # ReportWise 🩺
 
-ReportWise is an intelligent, patient-centered web application where users upload or photograph medical lab reports and receive clear, verified, plain-language AI explanations at an 8th-grade reading level. It features culturally relevant dietary guidance (optimized for Indian staples like dal, leafy greens, ragi, and curd), doctor discussion questions, prominent critical-value safety banners, and biomarker trend analysis across reports.
+ReportWise is an intelligent, patient-centered medical laboratory companion where users upload or photograph real lab reports and receive clear, verified, plain-language AI explanations at an 8th-grade reading level. It features culturally relevant dietary guidance (optimized for Indian staples like dal, palak, methi, ragi, and curd), doctor discussion questions, prominent critical-value panic safety banners, longitudinal biomarker trend analysis, and a global AI health chatbot (*"Ask ReportWise"*).
 
 ---
 
@@ -16,50 +16,55 @@ ReportWise is an intelligent, patient-centered web application where users uploa
 
 ---
 
-## 🚀 Features by Phase
+## 🚀 Key Features & Capabilities
 
-* **Phase 1: Architecture & Data Layer**
-  * Next.js 16 (App Router) + TypeScript + Tailwind CSS with calm medical theme.
-  * Supabase PostgreSQL schema with `profiles`, `reports`, RLS policies, and private encrypted storage bucket.
-  * Zod schemas for Pass 1 extraction (`ExtractionResultSchema`) and Pass 2 interpretation (`InterpretationResultSchema`).
-  * Pluggable LLM Provider abstraction (`src/lib/llm/`) with Google Gemini (`@google/genai`) and Mock provider.
-
-* **Phase 2: Multi-Page Upload, Camera & Editable Confirmation**
+* **Multi-Page Upload, Camera Capture & Pre-Upload Compression**
   * Up to 5 pages supported (JPG, PNG, WEBP, PDF, max 10MB).
-  * Phone camera capture button (`<input type="file" accept="image/*,application/pdf" capture="environment">`).
-  * Client-side HTML5 canvas image compression before upload.
-  * Page reordering (move left/right) and page removal.
-  * 1-Click test fixtures (CBC, Lipid, Critical Panel) for zero-camera instant testing.
-  * Pass 1 Vision extraction with automatic detection of blurry images (`"retake"`) and non-medical files (`"not_a_report"`).
-  * Interactive editable confirmation table allowing users to correct OCR mistakes, add missing tests, or delete misread lines.
+  * Direct phone camera capture button (`<input type="file" accept="image/*,application/pdf" capture="environment">`).
+  * Client-side HTML5 canvas image compression before network transmission.
+  * Page reordering (move left/right) and individual page deletion.
+  * Vision extraction with automatic detection of blurry images (`"retake"`) and non-medical files (`"not_a_report"`).
+  * Interactive editable confirmation table allowing users to correct OCR values, add missing tests, or delete misread lines.
 
-* **Phase 3: Deterministic Status Engine & Results Dashboard**
-  * Deterministic engine (in code, not LLM) comparing printed values to reference intervals.
-  * Clinical safety cutoffs config for critical thresholds (Hemoglobin, Glucose, Potassium, Sodium, Creatinine, Platelets, WBC, Calcium).
+* **Deterministic Status Engine & Results Dashboard**
+  * Deterministic comparison engine (in code, not LLM) comparing printed values to clinical reference intervals.
+  * Adult critical boundaries for panic thresholds (Hemoglobin, Glucose, Potassium, Sodium, Creatinine, Platelets, WBC, Calcium).
   * Prominent red-flag alert banner: **"Please see a doctor soon"** if any critical value is detected.
   * **Urgent Care Safeguard:** Routine lifestyle/diet tabs are collapsed behind a conscious *"View general lifestyle tips anyway"* toggle so urgent findings are never buried under routine advice.
   * Culturally relevant Indian dietary guidance (palak, methi, moong dal, ragi, curd, amla) tailored to user diet preference (`veg`, `non-veg`, `vegan`).
   * Doctor consultation questions and follow-up tests checklist.
 
-* **Phase 4: Auth, History, Storage Lifecycle & Privacy**
-  * Supabase Auth: Email + Google OAuth sign-in (`/auth`).
-  * History page (`/history`): Lists past reports with status badges and critical alert indicators.
-  * Report detail page (`/reports/[id]`): Displays full analysis and past records.
-  * Single report deletion: Removes database row and wipes storage files.
+* **Global AI Health Chatbot ("Ask ReportWise")**
+  * Floating trigger button accessible on all authenticated pages (with keyboard shortcut `⌘K` or `/`).
+  * Desktop side panel overlay and mobile full-screen bottom sheet with scroll lock protection.
+  * User-scoped persistent conversations (`chat_conversations` and `chat_messages`) with automatic local titling.
+  * Optional multi-report clinical attachment (attach 1 to 3 past lab reports for contextual trend queries).
+  * Natural language report resolution (*"What does my latest report say?"* automatically resolves and attaches the recent report).
+  * Strict safety rules: no diagnosis, no prescriptions, emergency escalation (112 / 108), and prompt-injection defense.
+  * Contextual and general suggested question chips with message feedback (Helpful / Unhelpful).
+
+* **Authentication, Privacy & Data Isolation**
+  * Official Google OAuth authentication via Supabase SSR with non-blocking redirects and session caching.
+  * Strict patient isolation enforced at the PostgreSQL database level via Row Level Security (RLS).
+  * Pre-upload anonymization modal with background scroll lock (`PrivacyConsentModal`).
+  * History page (`/history`): Lists verified past reports with status badges and abnormal biomarker indicators.
+  * Report detail page (`/reports/[id]`): Displays full analysis and records, with clean *"Report Not Found"* states for deleted/invalid IDs.
   * Settings (`/settings`):
     * Preference for auto-deleting original uploaded documents after analysis.
-    * Dietary preference selector.
-    * **"Delete all my data"**: One-click purge of all uploaded reports, storage files, and user profile.
-  * Per-user daily analysis cap (`MAX_ANALYSES_PER_USER_PER_DAY`, default 3).
-  * SHA-256 duplicate report caching to avoid wasting API quota.
+    * Dietary preference selector (`veg`, `non-veg`, `vegan`).
+    * **"Delete all my data"**: One-click purge of all uploaded reports, storage files, user profile, and chat conversations.
 
-* **Phase 5: Hindi / English Support, Trend Charts, PDF Export**
+* **Hindi / English Support, Trend Charts, PDF Export**
   * Dual-language toggle (**English / हिंदी**) in navigation and settings.
   * AI output language parameter (`en` vs `hi`) producing natural conversational Hindi or 8th-grade English.
   * Longitudinal biomarker trend charts using **Recharts** across past reports with reference range bands.
   * Doctor-ready PDF print export (`window.print()` formatted stylesheet).
   * Animated step-wise progress skeleton loader (*"Reading report… Checking values… Preparing insights…"*) during AI processing.
-  * Hidden diagnostic quota monitor at [`/admin/usage`](http://localhost:3000/admin/usage).
+
+* **Theme-Oriented Project Footer & Direct Feedback Form**
+  * Clean medical styling matching the application's teal and slate design language.
+  * Comprehensive project architecture, clinical safety cutoffs, and emergency guidance.
+  * One-click feedback form that persists submissions to the database and immediately triggers user's email client addressed to Samar Mehta (`samarmehta845@gmail.com`).
 
 ---
 
@@ -74,13 +79,13 @@ cp .env.example .env.local
 | Variable | Default / Example | Description |
 |---|---|---|
 | `GEMINI_API_KEY` | `AIzaSy...` | Free API key from Google AI Studio. |
-| `GEMINI_MODEL_EXTRACT` | `gemini-2.0-flash` | Vision model used for Pass 1 extraction. |
-| `GEMINI_MODEL_INTERPRET` | `gemini-2.0-flash` | Fast model used for Pass 2 plain-language analysis. |
+| `GEMINI_MODEL_EXTRACT` | `gemini-2.5-flash` | Vision model used for Pass 1 extraction. |
+| `GEMINI_MODEL_INTERPRET` | `gemini-2.5-flash` | Fast model used for Pass 2 plain-language analysis. |
 | `LLM_PROVIDER` | `gemini` (or `mock`) | Selects active provider. Set to `mock` to test without consuming quota. |
 | `MAX_ANALYSES_PER_USER_PER_DAY` | `20` | Max analyses per user per day. |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `your-anon-key` | Supabase anon key. |
-| `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | Optional backend admin key for database cleanups. |
+| `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | Backend admin key for database cleanups and migrations. |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Application root URL. |
 
 ---
@@ -90,9 +95,9 @@ cp .env.example .env.local
 1. Open your project on [Supabase](https://supabase.com/dashboard).
 2. Go to the **SQL Editor**.
 3. Copy and run the entire script from [`supabase/schema.sql`](./supabase/schema.sql).
-   - Creates `profiles` and `reports` tables.
-   - Configures the private `reports` bucket (10MB limit, image and PDF support).
-   - Enables Row Level Security (RLS) on tables and storage objects so users can only access their own data.
+   - Creates `profiles`, `reports`, `chat_conversations`, `chat_messages`, and `feedback` tables.
+   - Configures the private `reports` storage bucket (10MB limit, image and PDF support).
+   - Enables Row Level Security (RLS) on all tables and storage objects so users can only access their own data.
    - Creates triggers for auto-creating profile rows on signup and updating timestamps.
 
 ### 🔑 Enabling Google OAuth in Supabase
@@ -117,7 +122,7 @@ cp .env.example .env.local
 
 2. **Run tests:**
    ```bash
-   npm run test:llm
+   npm test
    ```
 
 3. **Start the development server:**
@@ -144,12 +149,16 @@ flowchart TD
         Upload["Camera / Document Ingestion\n(Multi-page, Canvas Compression)"]
         ConfirmTable["Human-in-the-Loop Table\n(Edit OCR errors, verify values)"]
         Dashboard["Results Dashboard\n(Values, Diet, Habits, Doctor Questions)"]
-        PDFGen["Client-Side PDF Engine\n(Single-page & Full Report Export)"]
+        ChatDrawer["Ask ReportWise Chatbot\n(Drawer overlay, Multi-report attachment)"]
+        Footer["Theme-Oriented Footer\n(Architecture, Safety, Direct Mail Feedback)"]
+        PDFGen["Client-Side PDF Engine\n(Print-ready Stylesheet Export)"]
     end
 
     subgraph API["2. Next.js App Router (Backend Routes)"]
         ExtractRoute["/api/reports/extract\n(Pass 1 Extraction Route)"]
         AnalyzeRoute["/api/reports/analyze\n(Pass 2 Interpretation Route)"]
+        ChatRoute["/api/chat\n(Streaming Clinical Chatbot)"]
+        FeedbackRoute["/api/feedback\n(Feedback Persistence & Dispatch)"]
         ListRoute["/api/reports/list\n(History & Trend Query)"]
         DeleteRoute["/api/reports/[id]\n(GDPR/Privacy Deletion)"]
     end
@@ -164,10 +173,11 @@ flowchart TD
         ProviderInterface["LLMProvider Interface\n(Strict Zod Schema Output)"]
         VisionAI["Optical Vision Analysis\n(Extraction: test, value, unit, ref range)"]
         ClinicalAI["Medical Interpretation\n(8th-grade explanations, Indian diet)"]
+        ChatAI["Clinical Conversation Engine\n(Prompt-injection defense, Citations)"]
     end
 
     subgraph Storage["5. Supabase Persistence & Storage"]
-        PostgresDB[("PostgreSQL\n(profiles, reports with JSONB)")]
+        PostgresDB[("PostgreSQL\n(profiles, reports, chat, feedback)")]
         PrivateBucket[("Private Encrypted Storage\n(Auto-deleted after extraction)")]
     end
 
@@ -184,6 +194,13 @@ flowchart TD
     ClinicalAI --> PostgresDB
     ClinicalAI --> Dashboard
     
+    ChatDrawer --> ChatRoute
+    ChatRoute --> ChatAI
+    ChatAI --> PostgresDB
+
+    Footer --> FeedbackRoute
+    FeedbackRoute --> PostgresDB
+
     Dashboard --> PDFGen
     Dashboard --> ListRoute
     ListRoute --> PostgresDB
@@ -210,7 +227,7 @@ flowchart TD
 - **Urgent Care Protocol:** If any critical cutoff is breached, a dark red banner (*"Please see a doctor soon"*) is pinned to the top, and routine lifestyle tabs are collapsed behind a conscious toggle so urgent care is never obscured by routine advice.
 
 #### 4. Persistence, Rate Limiting & Storage Minimization
-- **Supabase PostgreSQL & Admin Bypass:** API routes leverage `SUPABASE_SERVICE_ROLE_KEY` to guarantee data integrity across profiles and reports.
+- **Supabase PostgreSQL & Admin Bypass:** API routes leverage `SUPABASE_SERVICE_ROLE_KEY` to guarantee data integrity across profiles, reports, conversations, and feedback.
 - **Privacy Auto-Cleanup:** Original uploaded files in Supabase Storage are automatically purged from the bucket once interpretation completes.
 - **SHA-256 Deduplication Cache:** Identical uploads and identical confirmed inputs hit a fast in-memory SHA-256 cache, eliminating redundant model latency and protecting API quota.
 
@@ -220,49 +237,53 @@ flowchart TD
 
 Follow these steps to manually test the complete user journey:
 
-- [ ] **1. Instant Demo / Sample Flow:**
-  - Visit the homepage [http://localhost:3000](http://localhost:3000).
-  - Under *"Or test instantly with a pre-loaded sample report"*, click **"Sample CBC"**.
-  - Notice the step progress loader (*Reading report...*).
+- [ ] **1. Authentication Flow:**
+  - Visit [http://localhost:3000](http://localhost:3000).
+  - Verify unauthenticated users are smoothly routed to `/auth`.
+  - Sign in with Google OAuth. Verify instant redirection to the home dashboard without buffering or stalls.
+
+- [ ] **2. Report Upload & Extraction:**
+  - Upload a real medical lab report (or photo of a blood test).
+  - Verify the step progress loader (*Reading report...*).
   - Verify you land on the **Editable Confirmation Table**.
-  - Edit a value (e.g. change Hemoglobin from `9.8` to `6.5`). Observe the status chip update in real-time to **Critical Low** with a pulse badge.
+  - Verify values, units, and reference ranges extracted by the AI.
+  - Test editing a value (e.g. change Hemoglobin to `6.5`). Observe the status chip update in real-time to **Critical Low**.
   - Click **"Confirm & Generate Plain-Language Explanation"**.
-  - Notice the step loader (*Checking values... Preparing insights...*).
-  - Verify the **Results Dashboard** renders with Patient Summary, Key Findings, Culturally Relevant Indian Diet (dal, palak, ragi), and Doctor Questions.
 
-- [ ] **2. Critical Alert & Lifestyle Collapse Safeguard:**
-  - Go back and click **"Sample Critical Panel"** (or change Potassium to `6.8` / Glucose to `340`).
-  - Confirm the report.
-  - Verify that the prominent red banner **"Please See a Doctor Soon (Urgent Finding)"** appears at the top.
-  - Click the **Diet** or **Habits** tab. Verify the advice is collapsed behind **"View general lifestyle tips anyway"** so urgent findings are never buried under routine tips.
+- [ ] **3. Results Dashboard & Critical Safeguards:**
+  - Verify the **Results Dashboard** renders Patient Summary, Key Findings, Indian Diet (dal, palak, ragi), and Doctor Questions.
+  - If a critical biomarker is present, verify the prominent red banner **"Please See a Doctor Soon (Urgent Finding)"** appears at the top.
+  - Click the **Diet** or **Habits** tab. Verify advice is collapsed behind **"View general lifestyle tips anyway"** during critical findings.
 
-- [ ] **3. Dual Language Toggle (English / हिंदी):**
+- [ ] **4. Dual Language Toggle (English / हिंदी):**
   - Click the language button in the navbar (**"हिंदी"**).
   - Verify all UI elements, status labels, headers, and tabs switch into natural Hindi.
 
-- [ ] **4. Trend Chart Visualization:**
+- [ ] **5. Trend Chart Visualization & PDF Export:**
   - Click the **"Trend Chart"** tab on the results dashboard (or navigate to `/history`).
-  - Select different biomarkers (e.g. Hemoglobin, Fasting Blood Glucose).
-  - Verify Recharts plots the points with healthy reference bands.
+  - Select different biomarkers (e.g. Hemoglobin, Fasting Blood Glucose). Verify Recharts plots the points with healthy reference bands.
+  - On the results dashboard, click **"Export Doctor-Ready PDF"** and verify print dialog stylesheet.
 
-- [ ] **5. PDF Export:**
-  - On the results dashboard, click **"Export Doctor-Ready PDF"**.
-  - Verify the browser print dialog opens with a clean, print-optimized stylesheet.
+- [ ] **6. "Ask ReportWise" Global AI Chatbot:**
+  - Press `Ctrl/Cmd+K` or `/` (or click floating button) on any page (`/`, `/history`, `/reports/[id]`, `/settings`).
+  - Ask general health questions with no report attached.
+  - Attach 1–3 past reports from the picker and ask contextual questions.
+  - Test background scroll lock: verify the underlying page cannot scroll while the chatbot is open.
+  - Review past conversations in the history drawer and test conversation renaming.
 
-- [ ] **6. History & Data Purge:**
-  - Visit `/history` to review recorded past reports.
-  - Visit `/settings` to test saving dietary preferences and testing **"Delete All My Data"**.
-  - Visit `/admin/usage` to inspect live Gemini calls, cache hits, and daily quota consumption.
+- [ ] **7. Footer & Direct Feedback Form:**
+  - On `/`, scroll to the footer to review the project overview.
+  - Fill in the feedback form (rating, category, message) and click **"Send Mail to Samar"**.
+  - Verify your email client opens pre-addressed to `samarmehta845@gmail.com` with the subject and message filled in.
+  - Visit `/history`, `/reports/[id]`, and `/settings` to verify the footer is cleanly hidden from those pages as requested.
 
-- [ ] **7. "Ask ReportWise" Global AI Chatbot:**
-  - Verify floating button appears across all authenticated pages (`/`, `/history`, `/reports/[id]`, `/settings`) and is hidden only on `/auth`.
-  - Press `Ctrl/Cmd+K` or `/` (or click button) to open the side panel overlay on desktop or bottom sheet on mobile. Verify it doesn't cover sticky elements.
-  - Test asking a general health question with no report attached ("How do I read a blood test report?").
-  - Test asking about "my report" when none is attached: verify the assistant informs you no report is attached and points to the "Attach report" button.
-  - Click **"Attach report"** and select 1–3 reports from the picker. Verify removable chips appear above the input.
-  - Ask a question about the attached report: verify the assistant cites the report name and date and answers accurately without hallucinating.
-  - Visit `/reports/[id]`: open chat and verify the smart suggestion chip *"Attach this report"* appears.
-  - Test natural language attachment: ask *"what does my latest report say?"* and verify the system automatically resolves and attaches your most recent report with a visible chip.
-  - Test conversation persistence: navigate between pages (e.g. from `/` to `/history` to `/settings`) with the chat open, verifying the conversation and panel state remain active.
-  - Test past conversations drawer: click the clock icon, review conversation history, rename a conversation, and test creating a *"New Chat"*.
-  - Visit `/settings` and test *"Delete All My Data"*: verify conversations and messages are purged alongside reports.
+- [ ] **8. Data Erasure:**
+  - Visit `/settings` and click **"Delete All My Data"**.
+  - Verify all reports, storage files, user profile, and chat conversations are permanently purged.
+
+---
+
+## 👤 Author & Support
+
+Created by **Samar Mehta** ([`@samar-2108`](https://github.com/samar-2108))  
+Contact & Feedback: [`samarmehta845@gmail.com`](mailto:samarmehta845@gmail.com)
