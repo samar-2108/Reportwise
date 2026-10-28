@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { safeErrorResponse } from "@/lib/security/safe-error";
 
 export async function GET() {
   try {
@@ -43,10 +44,10 @@ export async function GET() {
       throw error;
     }
 
-    console.error("List reports error:", error);
-    return NextResponse.json(
-      { error: "An unexpected error occurred while listing reports." },
-      { status: 500 }
+    return safeErrorResponse(
+      error,
+      "An unexpected error occurred while listing reports.",
+      500
     );
   }
 }

@@ -9,6 +9,7 @@ import { buildChatSystemPrompt } from "@/prompts/chat";
 import { buildReportsContext, resolveNaturalLanguageReport } from "@/lib/chat/context-builder";
 import { ConfirmedItem } from "@/types/report";
 import { ReportRow } from "@/types/database";
+import { safeErrorResponse } from "@/lib/security/safe-error";
 
 const ChatRequestSchema = z.object({
   conversationId: z.string().uuid().optional(),
@@ -258,10 +259,10 @@ export async function POST(request: Request) {
       autoAttachedReport: autoAttachedSummary,
     });
   } catch (error: unknown) {
-    console.error("Ask ReportWise API fatal error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
-      { status: 500 }
+    return safeErrorResponse(
+      error,
+      "An unexpected error occurred while processing your message. Please try again.",
+      500
     );
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { consumeRateLimit } from "@/lib/rate-limit";
+import { safeErrorResponse } from "@/lib/security/safe-error";
 
 const FeedbackSchema = z.object({
   email: z.string().email("Valid email is required").optional().or(z.literal("")),
@@ -114,10 +115,6 @@ export async function POST(request: NextRequest) {
       message: "Your feedback has been received and forwarded to our team.",
     });
   } catch (error) {
-    console.error("Feedback submission error:", error);
-    return NextResponse.json(
-      { error: "Failed to process feedback. Please try again." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, "Failed to process feedback. Please try again.", 500);
   }
 }

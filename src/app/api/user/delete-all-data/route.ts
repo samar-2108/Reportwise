@@ -3,6 +3,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { assertOwnedPaths } from "@/lib/security/assert-owned-paths";
 import { resetRateLimit } from "@/lib/rate-limit";
+import { safeErrorResponse } from "@/lib/security/safe-error";
 
 export async function POST() {
   try {
@@ -21,18 +22,47 @@ export async function POST() {
 
     const userId = user.id;
 
-    // 1. Purge all user files from the storage bucket
+    // 1. Purge all user files and nested report subfolders from storage bucket
     // Service-role client required to list and purge user storage prefix upon account deletion.
     const adminClient = getSupabaseAdminClient();
     if (adminClient) {
       try {
-        const { data: fileList, error: listError } = await adminClient.storage
+        const pathsToDelete = new Set<string>();
+
+        // Collect paths from user report records
+        const { data: userReports } = await serverSupabase
+          .from("reports")
+          .select("storage_file_paths")
+          .eq("user_id", userId);
+
+        userReports?.forEach((r) => {
+          if (Array.isArray(r.storage_file_paths)) {
+            r.storage_file_paths.forEach((p: string) => pathsToDelete.add(p));
+          }
+        });
+
+        // Also search user folder structure for any unlinked/orphaned uploads
+        const { data: rootItems } = await adminClient.storage
           .from("reports")
           .list(userId, { limit: 100 });
 
-        if (!listError && fileList && fileList.length > 0) {
-          const filePaths = fileList.map((f) => `${userId}/${f.name}`);
-          const safePaths = assertOwnedPaths(userId, filePaths);
+        if (rootItems) {
+          for (const item of rootItems) {
+            // Check for nested report directory
+            const { data: nestedFiles } = await adminClient.storage
+              .from("reports")
+              .list(`${userId}/${item.name}`, { limit: 100 });
+
+            if (nestedFiles && nestedFiles.length > 0) {
+              nestedFiles.forEach((f) => pathsToDelete.add(`${userId}/${item.name}/${f.name}`));
+            } else {
+              pathsToDelete.add(`${userId}/${item.name}`);
+            }
+          }
+        }
+
+        if (pathsToDelete.size > 0) {
+          const safePaths = assertOwnedPaths(userId, Array.from(pathsToDelete));
           await adminClient.storage.from("reports").remove(safePaths);
         }
       } catch (storageErr) {
@@ -80,10 +110,6 @@ export async function POST() {
       message: "All personal reports, chat conversations, and profile data have been permanently deleted.",
     });
   } catch (error: unknown) {
-    console.error("Delete all data error:", error);
-    return NextResponse.json(
-      { error: "Failed to purge user data. Please try again." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, "Failed to purge user data. Please try again.", 500);
   }
 }

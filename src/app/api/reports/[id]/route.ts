@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assertOwnedPaths } from "@/lib/security/assert-owned-paths";
+import { safeErrorResponse } from "@/lib/security/safe-error";
 
 export async function DELETE(
   _request: NextRequest,
@@ -82,10 +83,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: "Report and files deleted successfully" });
   } catch (error: unknown) {
-    console.error("Delete report error:", error);
-    return NextResponse.json(
-      { error: "Failed to delete report." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, "Failed to delete report.", 500);
   }
 }

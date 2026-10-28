@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLLMProvider, QuotaExceededError } from "@/lib/llm";
+import { getLLMProvider } from "@/lib/llm";
 import { INTERPRETATION_SYSTEM_PROMPT, buildInterpretationUserPrompt } from "@/prompts/interpretation";
 import { InterpretationResultSchema } from "@/lib/schemas/interpretation";
 import { evaluateAllTests } from "@/lib/medical/deterministic-check";
@@ -12,6 +12,7 @@ import { getServerEnv } from "@/lib/env";
 import { reportCache, computeInputSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
 import { AnalyzeRequestSchema } from "@/lib/schemas/analyze-request";
+import { safeErrorResponse } from "@/lib/security/safe-error";
 
 const MAX_BODY_BYTES = 200 * 1024; // 200 KB
 
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
     });
 
     // 6. Generate structured interpretation with LLM Provider (Pass 2) or use cached result
-    const inputHash = computeInputSha256({
+    const inputHash = computeInputSha256(userId, {
       reportType,
       tests: deterministicEvaluation.tests.map((t) => ({
         test: t.test,
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
       })),
       userProfile,
     });
-    const cachedInterpretation = reportCache.getInterpretation(inputHash);
+    const cachedInterpretation = reportCache.getInterpretation(inputHash, userId);
     let interpretation;
 
     if (cachedInterpretation) {
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
         InterpretationResultSchema
       );
       interpretation = rawInterpretation;
-      reportCache.setInterpretation(inputHash, interpretation);
+      reportCache.setInterpretation(inputHash, interpretation, userId);
     }
 
     // Sanitize findings and severities against deterministic ground truth
@@ -346,15 +347,10 @@ export async function POST(request: NextRequest) {
       analysis: interpretation,
     });
   } catch (error: unknown) {
-    console.error("API /api/reports/analyze error:", error);
-
-    if (error instanceof QuotaExceededError) {
-      return NextResponse.json({ error: error.message }, { status: 429 });
-    }
-
-    return NextResponse.json(
-      { error: "Failed to complete report analysis. Please try again." },
-      { status: 500 }
+    return safeErrorResponse(
+      error,
+      "Failed to complete report analysis. Please try again.",
+      500
     );
   }
 }

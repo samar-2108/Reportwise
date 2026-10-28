@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { checkIsAdmin } from "@/lib/auth/require-admin";
 import AdminUsageClient from "./admin-usage-client";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export default async function AdminUsagePage() {
   const { isAdmin } = await checkIsAdmin();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLLMProvider, LLMFile, QuotaExceededError } from "@/lib/llm";
+import { getLLMProvider, LLMFile } from "@/lib/llm";
 import { EXTRACTION_SYSTEM_PROMPT } from "@/prompts/extraction";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -8,10 +8,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ExtractionResultSchema } from "@/lib/schemas/extraction";
 import { reportCache, computeFilesSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
-import {
-  validateUploadedFiles,
-  UploadValidationError,
-} from "@/lib/security/upload-validation";
+import { safeErrorResponse } from "@/lib/security/safe-error";
+import { validateUploadedFiles } from "@/lib/security/upload-validation";
 
 export async function POST(request: NextRequest) {
   const storagePaths: string[] = [];
@@ -129,9 +127,9 @@ export async function POST(request: NextRequest) {
       console.error("Supabase insert report error in /api/reports/extract:", insertError.message);
     }
 
-    // 6. Check SHA-256 cache or invoke LLM Pass 1 Extraction
-    const fileHash = computeFilesSha256(llmFiles);
-    const cachedExtraction = reportCache.getExtraction(fileHash);
+    // 6. Check user-scoped SHA-256 cache or invoke LLM Pass 1 Extraction
+    const fileHash = computeFilesSha256(userId, llmFiles);
+    const cachedExtraction = reportCache.getExtraction(fileHash, userId);
     let validated;
 
     if (cachedExtraction) {
@@ -141,7 +139,7 @@ export async function POST(request: NextRequest) {
       const provider = getLLMProvider();
       const rawResult = await provider.extractFromFiles(llmFiles, EXTRACTION_SYSTEM_PROMPT);
       validated = ExtractionResultSchema.parse(rawResult);
-      reportCache.setExtraction(fileHash, validated);
+      reportCache.setExtraction(fileHash, validated, userId);
     }
 
     // 7. Update database row with extracted result
@@ -174,18 +172,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (error instanceof UploadValidationError) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    if (error instanceof QuotaExceededError) {
-      return NextResponse.json({ error: error.message }, { status: 429 });
-    }
-
-    console.error("API /api/reports/extract error:", error);
-    return NextResponse.json(
-      { error: "Failed to extract values from report. Please verify your file and try again." },
-      { status: 500 }
+    return safeErrorResponse(
+      error,
+      "Failed to extract values from report. Please verify your file and try again.",
+      500
     );
   }
 }
