@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import tsx --test src/lib/clinical/classify.test.ts src/lib/chat/chat.test.ts",
+    "check:secrets": "bash scripts/check-secrets.sh",
+    "test": "node --conditions=react-server --import tsx --test src/lib/clinical/classify.test.ts src/lib/chat/chat.test.ts src/lib/security/security.test.ts",
     "test:llm": "tsx scripts/test-llm.ts"
   },
   "dependencies": {
@@ -18,9 +19,10 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.61.0",
     "next": "16.4.2",
-    "react": "19.3.0",
+    "react": "19.3.1",
     "react-dom": "19.3.0",
     "recharts": "^3.10.1",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.7.0",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.25.2"
