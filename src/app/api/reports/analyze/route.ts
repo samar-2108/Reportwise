@@ -5,9 +5,14 @@ import { InterpretationResultSchema } from "@/lib/schemas/interpretation";
 import { evaluateAllTests } from "@/lib/medical/deterministic-check";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { assertOwnedPaths } from "@/lib/security/assert-owned-paths";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
+import { getServerEnv } from "@/lib/env";
 import { reportCache, computeInputSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,13 +23,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No confirmed test values provided" }, { status: 400 });
     }
 
-    // 1. Authenticate user
+    // 1. Authenticate user using user-scoped client
     const serverSupabase = await getSupabaseServerClient();
     const {
       data: { user },
+      error: authError,
     } = await serverSupabase.auth.getUser();
 
-    if (!user) {
+    if (authError || !user) {
       return NextResponse.json(
         { error: "Please sign in with Google to analyze lab reports." },
         { status: 401 }
@@ -32,22 +38,70 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = user.id;
-    const supabase = getSupabaseAdminClient();
-    const keepOriginalFiles = false;
+    const env = getServerEnv();
 
-    // Validate that reportId is a valid UUID, otherwise generate a fresh valid UUID for Postgres
-    const isValidUUID = (str: unknown): str is string =>
-      typeof str === "string" &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    // 2. Rate limiting check (burst + daily limit)
+    const burstCheck = await consumeRateLimit(userId, "analyze:burst", 10, 60);
+    if (!burstCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many analysis requests. Please wait a moment and try again." },
+        { status: 429 }
+      );
+    }
 
-    const finalReportId = isValidUUID(reportId) ? reportId : crypto.randomUUID();
+    const dailyCheck = await consumeRateLimit(
+      userId,
+      "analyses:daily",
+      env.MAX_ANALYSES_PER_USER_PER_DAY,
+      86400
+    );
+    if (!dailyCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: `Daily limit reached (${env.MAX_ANALYSES_PER_USER_PER_DAY} analyses/day). Please try again tomorrow.`,
+        },
+        { status: 429 }
+      );
+    }
 
-    // 2. Deterministic evaluation layer
+    userDailyCapLimiter.increment(userId);
+
+    // 3. IDOR Defense: Verify report ownership before any modification
+    let existingReport: { id: string; user_id: string; storage_file_paths: string[] | null } | null = null;
+    let finalReportId: string;
+
+    if (typeof reportId === "string" && UUID_REGEX.test(reportId)) {
+      const { data: foundReport, error: fetchError } = await serverSupabase
+        .from("reports")
+        .select("id, user_id, storage_file_paths")
+        .eq("id", reportId)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error("Error verifying report ownership:", fetchError.message);
+      }
+
+      if (foundReport) {
+        // Enforce strict ownership: a foreign user cannot modify another user's report
+        if (foundReport.user_id !== userId) {
+          return NextResponse.json({ error: "Report not found" }, { status: 404 });
+        }
+        existingReport = foundReport;
+        finalReportId = foundReport.id;
+      } else {
+        // ID did not exist; assign fresh server-generated UUID
+        finalReportId = crypto.randomUUID();
+      }
+    } else {
+      finalReportId = crypto.randomUUID();
+    }
+
+    // 4. Deterministic clinical evaluation layer
     const deterministicEvaluation = evaluateAllTests(tests);
     const hasCritical = deterministicEvaluation.hasCriticalValues;
     const criticalItems = deterministicEvaluation.tests.filter((t) => t.is_critical);
 
-    // 3. Build Prompt with confirmed data, deterministic status, and patient context
+    // 5. Build prompt with verified clinical data
     const userPrompt = buildInterpretationUserPrompt({
       reportType: reportType || "Lab Report",
       tests: deterministicEvaluation.tests.map((t) => ({
@@ -72,7 +126,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 4. Generate structured interpretation with LLM Provider (Pass 2) or use cached result
+    // 6. Generate structured interpretation with LLM Provider (Pass 2) or use cached result
     const inputHash = computeInputSha256({
       reportType,
       tests: deterministicEvaluation.tests.map((t) => ({
@@ -107,7 +161,6 @@ export async function POST(request: NextRequest) {
     );
 
     interpretation.findings = (interpretation.findings ?? []).map((f) => {
-      // Find primary matching test from deterministic evaluation
       const related = f.related_tests ?? [];
       const matchingTest = deterministicEvaluation.tests.find((t) => {
         const tName = t.test.toLowerCase().trim();
@@ -119,17 +172,14 @@ export async function POST(request: NextRequest) {
         );
       });
 
-      // Ensure finding title explicitly features the exact test value if not already present
       if (matchingTest && !f.title.includes(matchingTest.value)) {
         f.title = `${matchingTest.test}: ${matchingTest.value} ${matchingTest.unit || ""} - ${f.title}`;
       }
 
-      // If no critical values exist in the report, finding severity cannot be critical
       if (!hasCritical && f.severity === "critical") {
         f.severity = "moderate";
       }
 
-      // If all related tests for this finding are verified normal, enforce normal severity
       if (related.length > 0) {
         const allRelatedAreNormal = related.every((rt) => {
           const lower = rt.toLowerCase().trim();
@@ -143,7 +193,7 @@ export async function POST(request: NextRequest) {
       return f;
     });
 
-    // Ensure every test in the report has a representation in Key Insights
+    // Ensure every test in the report has representation in Key Insights
     const coveredTestNames = new Set(
       (interpretation.findings ?? []).flatMap((f) => [
         ...(f.related_tests ?? []).map((rt) => rt.toLowerCase().trim()),
@@ -180,7 +230,6 @@ export async function POST(request: NextRequest) {
       );
       interpretation.red_flags = mergedRedFlags;
     } else if (!hasCritical) {
-      // If there are NO critical values, prevent hallucinated red flags for tests that are normal
       const allTestsNormal = deterministicEvaluation.tests.every((t) => t.computed_status === "normal");
       if (allTestsNormal) {
         interpretation.red_flags = [];
@@ -195,73 +244,79 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Update/Upsert Database Record in debug mode
-    if (supabase) {
-      try {
-        await supabase.from("profiles").upsert(
-          {
-            id: userId,
-            email: user.email ?? null,
-            full_name:
-              user.user_metadata?.full_name ||
-              user.user_metadata?.name ||
-              user.email?.split("@")[0] ||
-              "Patient",
-            language: userProfile?.language || "en",
-            diet_preference: userProfile?.dietPreference || "veg",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
-      } catch (profileErr) {
-        console.warn("Could not upsert profile:", profileErr);
-      }
+    // 7. Update/Insert Database Record using user-scoped client
+    try {
+      await serverSupabase.from("profiles").upsert(
+        {
+          id: userId,
+          email: user.email ?? null,
+          full_name:
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            user.email?.split("@")[0] ||
+            "Patient",
+          language: userProfile?.language || "en",
+          diet_preference: userProfile?.dietPreference || "veg",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (profileErr) {
+      console.warn("Could not upsert profile:", profileErr);
+    }
 
-      const { error: upsertError } = await supabase
+    const reportPayload = {
+      title: reportType || "Lab Report",
+      report_type: reportType || "Lab Report",
+      status: "completed" as const,
+      confirmed_data: JSON.parse(JSON.stringify(deterministicEvaluation.tests)),
+      analysis_data: JSON.parse(JSON.stringify(interpretation)),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingReport) {
+      const { error: updateError } = await serverSupabase
         .from("reports")
-        .upsert(
-          {
-            id: finalReportId,
-            user_id: userId,
-            title: reportType || "Lab Report",
-            report_type: reportType || "Lab Report",
-            status: "completed",
-            confirmed_data: JSON.parse(JSON.stringify(deterministicEvaluation.tests)),
-            analysis_data: JSON.parse(JSON.stringify(interpretation)),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
+        .update(reportPayload)
+        .eq("id", finalReportId)
+        .eq("user_id", userId);
 
-      if (upsertError) {
-        console.error("Supabase reports upsert error in /api/reports/analyze:", upsertError);
-      } else {
-        console.log(`Successfully saved report ${finalReportId} to Supabase`);
+      if (updateError) {
+        console.error("Supabase reports update error:", updateError.message);
       }
+    } else {
+      const { error: insertError } = await serverSupabase
+        .from("reports")
+        .insert({
+          id: finalReportId,
+          user_id: userId,
+          ...reportPayload,
+        });
 
-      // Auto-delete original files after processing unless user opted to keep them
-      if (!keepOriginalFiles) {
-        try {
-          const { data: reportRow } = await supabase
-            .from("reports")
-            .select("storage_file_paths")
-            .eq("id", finalReportId)
-            .single();
+      if (insertError) {
+        console.error("Supabase reports insert error:", insertError.message);
+      }
+    }
 
-          if (reportRow && reportRow.storage_file_paths?.length) {
-            await supabase.storage.from("reports").remove(reportRow.storage_file_paths);
-            await supabase
-              .from("reports")
-              .update({ storage_file_paths: [] })
-              .eq("id", finalReportId);
-          }
-        } catch (cleanupErr) {
-          console.warn("Could not clean up storage files:", cleanupErr);
+    // 8. Auto-delete original medical storage files immediately after analysis
+    try {
+      const pathsToDelete = existingReport?.storage_file_paths || [];
+      if (pathsToDelete.length > 0) {
+        // Enforce path verification before calling storage remove
+        const safePaths = assertOwnedPaths(userId, pathsToDelete);
+        // Service-role client required to purge storage objects reliably
+        const adminClient = getSupabaseAdminClient();
+        if (adminClient) {
+          await adminClient.storage.from("reports").remove(safePaths);
         }
+        await serverSupabase
+          .from("reports")
+          .update({ storage_file_paths: [] })
+          .eq("id", finalReportId)
+          .eq("user_id", userId);
       }
-
-      // Increment daily user cap counter
-      userDailyCapLimiter.increment(userId);
+    } catch (cleanupErr) {
+      console.warn("Storage cleanup notice:", cleanupErr);
     }
 
     return NextResponse.json({
@@ -279,7 +334,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to analyze report" },
+      { error: "Failed to complete report analysis. Please try again." },
       { status: 500 }
     );
   }

@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getLLMProvider } from "@/lib/llm";
 import { QuotaExceededError } from "@/lib/llm/types";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { buildChatSystemPrompt } from "@/prompts/chat";
 import { buildReportsContext, resolveNaturalLanguageReport } from "@/lib/chat/context-builder";
 import { ConfirmedItem } from "@/types/report";
@@ -42,9 +43,17 @@ export async function POST(request: Request) {
     let conversationId = parsed.data.conversationId;
     const userId = user.id;
 
-    // Daily analysis/chat cap check
-    const rateCheck = userDailyCapLimiter.checkLimit(userId);
-    if (!rateCheck.allowed) {
+    // Chat rate limiting (burst 10/min, daily cap 50/day)
+    const burstCheck = await consumeRateLimit(userId, "chat:burst", 10, 60);
+    if (!burstCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many messages sent. Please slow down and try again in a minute." },
+        { status: 429 }
+      );
+    }
+
+    const dayCheck = await consumeRateLimit(userId, "chat:day", 50, 86400);
+    if (!dayCheck.allowed) {
       return NextResponse.json(
         {
           error: "Daily health question quota reached. Please try again tomorrow.",

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { consumeRateLimit } from "@/lib/rate-limit";
 
 const FeedbackSchema = z.object({
   email: z.string().email("Valid email is required").optional().or(z.literal("")),
@@ -15,7 +16,7 @@ const FeedbackSchema = z.object({
   message: z.string().min(5, "Please enter at least 5 characters of feedback").max(2000),
 });
 
-const DEVELOPER_EMAIL = "samarmehta845@gmail.com";
+const DEFAULT_RECIPIENT_EMAIL = "samarmehta845@gmail.com";
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,23 +48,44 @@ export async function POST(request: NextRequest) {
           senderEmail = user.email ?? null;
         }
       }
+    } catch {
+      // Unauthenticated visitor feedback
+    }
 
-      // Save feedback in Supabase table
+    // Rate limiting: 5 feedback submissions per hour per user / IP
+    const clientIp =
+      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+      request.headers.get("x-real-ip") ||
+      "anonymous-client";
+    const rateLimitKey = userId || `ip:${clientIp}`;
+
+    const limitCheck = await consumeRateLimit(rateLimitKey, "feedback:hour", 5, 3600);
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many feedback submissions. Please try again in an hour." },
+        { status: 429 }
+      );
+    }
+
+    const recipientEmail = process.env.FEEDBACK_RECIPIENT_EMAIL || DEFAULT_RECIPIENT_EMAIL;
+
+    // Save feedback to database if available
+    try {
+      const supabase = await getSupabaseServerClient();
       await supabase.from("feedback").insert({
         user_id: userId,
         user_email: senderEmail,
         category,
         rating: rating || null,
         message,
-        recipient_email: DEVELOPER_EMAIL,
+        recipient_email: recipientEmail,
         status: "new",
       });
     } catch (dbErr) {
-      // Non-fatal: if database table is not yet migrated, we still log and proceed
       console.warn("Could not persist feedback to database:", dbErr);
     }
 
-    // Construct standard mailto URL for direct email client delivery
+    // Construct mailto link
     const categoryLabels: Record<string, string> = {
       general: "General Feedback",
       bug_report: "Bug Report",
@@ -84,13 +106,12 @@ export async function POST(request: NextRequest) {
       }\nRating: ${rating ? `${rating} / 5 Stars` : "Not provided"}\n\nFeedback:\n${message}\n\n---\nSent via ReportWise Web App`
     );
 
-    const mailtoUrl = `mailto:${DEVELOPER_EMAIL}?subject=${subject}&body=${bodyContent}`;
+    const mailtoUrl = `mailto:${recipientEmail}?subject=${subject}&body=${bodyContent}`;
 
     return NextResponse.json({
       success: true,
-      recipient: DEVELOPER_EMAIL,
       mailtoUrl,
-      message: `Your feedback has been received and forwarded to ${DEVELOPER_EMAIL}.`,
+      message: "Your feedback has been received and forwarded to our team.",
     });
   } catch (error) {
     console.error("Feedback submission error:", error);
@@ -100,4 +121,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -376,3 +376,107 @@ create policy "Users can view own feedback"
   on public.feedback for select
   using (auth.uid() = user_id);
 
+-- ==============================================================================
+-- 10. RATE LIMITING & ABUSE PREVENTION
+-- ==============================================================================
+create table if not exists public.rate_limits (
+  key text not null,
+  bucket text not null,
+  count int not null default 1,
+  window_start timestamptz not null default now(),
+  primary key (key, bucket)
+);
+
+create index if not exists idx_rate_limits_window_start on public.rate_limits(window_start);
+
+alter table public.rate_limits enable row level security;
+
+-- Rate limits are accessed via SECURITY DEFINER functions only; revoke direct public access
+revoke all on public.rate_limits from anon, authenticated;
+
+create or replace function public.consume_rate_limit(
+  p_key text,
+  p_bucket text,
+  p_limit int,
+  p_window_seconds int
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_now timestamptz := now();
+  v_window_interval interval := (p_window_seconds || ' seconds')::interval;
+  v_rec public.rate_limits%rowtype;
+begin
+  -- Lock or insert initial record
+  insert into public.rate_limits (key, bucket, count, window_start)
+  values (p_key, p_bucket, 1, v_now)
+  on conflict (key, bucket) do nothing;
+
+  select * into v_rec
+  from public.rate_limits
+  where key = p_key and bucket = p_bucket
+  for update;
+
+  -- Window has rolled over: reset window and count
+  if v_now >= v_rec.window_start + v_window_interval then
+    update public.rate_limits
+    set count = 1,
+        window_start = v_now
+    where key = p_key and bucket = p_bucket;
+
+    return jsonb_build_object(
+      'allowed', true,
+      'current', 1,
+      'limit', p_limit,
+      'remaining', greatest(0, p_limit - 1),
+      'reset_at', v_now + v_window_interval
+    );
+  end if;
+
+  -- Within current window
+  if v_rec.count < p_limit then
+    update public.rate_limits
+    set count = count + 1
+    where key = p_key and bucket = p_bucket;
+
+    return jsonb_build_object(
+      'allowed', true,
+      'current', v_rec.count + 1,
+      'limit', p_limit,
+      'remaining', greatest(0, p_limit - (v_rec.count + 1)),
+      'reset_at', v_rec.window_start + v_window_interval
+    );
+  else
+    return jsonb_build_object(
+      'allowed', false,
+      'current', v_rec.count,
+      'limit', p_limit,
+      'remaining', 0,
+      'reset_at', v_rec.window_start + v_window_interval
+    );
+  end if;
+end;
+$$;
+
+create or replace function public.reset_rate_limit(
+  p_key text,
+  p_bucket text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_bucket is null then
+    delete from public.rate_limits where key = p_key;
+  else
+    delete from public.rate_limits where key = p_key and bucket = p_bucket;
+  end if;
+end;
+$$;
+
+
