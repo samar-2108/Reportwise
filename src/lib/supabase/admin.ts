@@ -1,16 +1,26 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { Database } from "@/types/database";
 
-export const DEBUG_USER_ID = "d3b00000-0000-4000-a000-000000000000";
-
 let adminClient: ReturnType<typeof createClient<Database>> | null = null;
 
-export function getSupabaseAdminClient() {
+/**
+ * Returns a Supabase client configured with the service-role key.
+ *
+ * SECURITY WARNING:
+ * This client bypasses Row Level Security (RLS). It MUST ONLY be used
+ * for system-level operations where no user session exists or for privileged tasks:
+ * 1. Invoking atomic rate limiting stored procedures (consume_rate_limit)
+ * 2. Storage file deletion/cleanup where paths have been explicitly validated via assertOwnedPaths
+ * 3. Scheduled cron cleanup tasks
+ *
+ * DO NOT use this client for standard user reads/writes — use getSupabaseServerClient() instead.
+ */
+export function getSupabaseAdminClient(): ReturnType<typeof createClient<Database>> | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || (!serviceRoleKey && !anonKey)) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return null;
   }
 
@@ -18,7 +28,7 @@ export function getSupabaseAdminClient() {
 
   adminClient = createClient<Database>(
     supabaseUrl,
-    serviceRoleKey || anonKey!,
+    serviceRoleKey,
     {
       auth: {
         autoRefreshToken: false,
@@ -29,17 +39,3 @@ export function getSupabaseAdminClient() {
 
   return adminClient;
 }
-
-export async function ensureDebugUser(client: ReturnType<typeof createClient<Database>>) {
-  try {
-    await client.auth.admin.createUser({
-      id: DEBUG_USER_ID,
-      email: "debug@reportwise.local",
-      password: "DebugPassword123!",
-      email_confirm: true,
-    });
-  } catch {
-    // Already created
-  }
-}
-
