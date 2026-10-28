@@ -11,17 +11,36 @@ import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
 import { getServerEnv } from "@/lib/env";
 import { reportCache, computeInputSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
+import { AnalyzeRequestSchema } from "@/lib/schemas/analyze-request";
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_BODY_BYTES = 200 * 1024; // 200 KB
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { reportId, reportType, tests, userProfile } = body;
-
-    if (!tests || !Array.isArray(tests) || tests.length === 0) {
-      return NextResponse.json({ error: "No confirmed test values provided" }, { status: 400 });
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: "Payload too large. Maximum request size is 200KB." },
+        { status: 413 }
+      );
     }
+
+    const rawBody = await request.json().catch(() => null);
+    if (!rawBody) {
+      return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+    }
+
+    const parseResult = AnalyzeRequestSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        {
+          error: parseResult.error.issues.map((i) => i.message).join(", "),
+        },
+        { status: 400 }
+      );
+    }
+
+    const { reportId, reportType, tests, userProfile } = parseResult.data;
 
     // 1. Authenticate user using user-scoped client
     const serverSupabase = await getSupabaseServerClient();
@@ -70,7 +89,7 @@ export async function POST(request: NextRequest) {
     let existingReport: { id: string; user_id: string; storage_file_paths: string[] | null } | null = null;
     let finalReportId: string;
 
-    if (typeof reportId === "string" && UUID_REGEX.test(reportId)) {
+    if (reportId) {
       const { data: foundReport, error: fetchError } = await serverSupabase
         .from("reports")
         .select("id, user_id, storage_file_paths")

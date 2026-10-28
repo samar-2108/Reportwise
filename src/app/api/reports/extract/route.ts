@@ -8,15 +8,10 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ExtractionResultSchema } from "@/lib/schemas/extraction";
 import { reportCache, computeFilesSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
-
-function getSafeFileExtension(file: File): string {
-  const mime = file.type?.toLowerCase() || "";
-  if (mime.includes("pdf")) return "pdf";
-  if (mime.includes("png")) return "png";
-  if (mime.includes("webp")) return "webp";
-  if (mime.includes("heic")) return "heic";
-  return "jpg";
-}
+import {
+  validateUploadedFiles,
+  UploadValidationError,
+} from "@/lib/security/upload-validation";
 
 export async function POST(request: NextRequest) {
   const storagePaths: string[] = [];
@@ -24,17 +19,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const formData = await request.formData();
-    const files = formData.getAll("files") as File[];
+    const rawFiles = formData.getAll("files") as File[];
 
-    if (!files || files.length === 0) {
-      return NextResponse.json({ error: "No files were uploaded" }, { status: 400 });
-    }
+    // 1. Validate files against size limits and magic byte signatures
+    const validatedFiles = await validateUploadedFiles(rawFiles);
 
-    if (files.length > 5) {
-      return NextResponse.json({ error: "Maximum 5 pages allowed per report" }, { status: 400 });
-    }
-
-    // 1. Authenticate user using user-scoped client
+    // 2. Authenticate user using user-scoped client
     const serverSupabase = await getSupabaseServerClient();
     serverSupabaseInstance = serverSupabase;
     const {
@@ -52,7 +42,7 @@ export async function POST(request: NextRequest) {
     const userId = user.id;
     const env = getServerEnv();
 
-    // 2. Check rate limits (burst + daily atomic caps)
+    // 3. Check rate limits (burst + daily atomic caps)
     const burstCheck = await consumeRateLimit(userId, "extract:burst", 5, 60);
     if (!burstCheck.allowed) {
       return NextResponse.json(
@@ -76,30 +66,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Mirror to in-memory limiter for diagnostics
     userDailyCapLimiter.increment(userId);
 
-    // 3. Convert files to LLMFile buffers and upload to user storage folder
+    // 4. Convert files to LLMFile buffers and upload to user storage folder
     const llmFiles: LLMFile[] = [];
     const reportId = crypto.randomUUID();
 
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const buffer = Buffer.from(await f.arrayBuffer());
-      const ext = getSafeFileExtension(f);
+    for (let i = 0; i < validatedFiles.length; i++) {
+      const f = validatedFiles[i];
 
       llmFiles.push({
-        mimeType: f.type || "image/jpeg",
-        data: buffer,
+        mimeType: f.mimeType,
+        data: f.buffer,
       });
 
       // Strict server-generated filename prevents path traversal
-      const safeFilePath = `${userId}/${reportId}/page-${i + 1}.${ext}`;
+      const safeFilePath = `${userId}/${reportId}/page-${i + 1}.${f.extension}`;
 
       const { error: uploadError } = await serverSupabase.storage
         .from("reports")
-        .upload(safeFilePath, buffer, {
-          contentType: f.type || "image/jpeg",
+        .upload(safeFilePath, f.buffer, {
+          contentType: f.mimeType,
           upsert: true,
         });
 
@@ -110,7 +97,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Create reports table row with status "processing" via user-scoped client
+    // 5. Create reports table row with status "processing" via user-scoped client
     try {
       await serverSupabase.from("profiles").upsert(
         {
@@ -142,7 +129,7 @@ export async function POST(request: NextRequest) {
       console.error("Supabase insert report error in /api/reports/extract:", insertError.message);
     }
 
-    // 5. Check SHA-256 cache or invoke LLM Pass 1 Extraction
+    // 6. Check SHA-256 cache or invoke LLM Pass 1 Extraction
     const fileHash = computeFilesSha256(llmFiles);
     const cachedExtraction = reportCache.getExtraction(fileHash);
     let validated;
@@ -157,7 +144,7 @@ export async function POST(request: NextRequest) {
       reportCache.setExtraction(fileHash, validated);
     }
 
-    // 6. Update database row with extracted result
+    // 7. Update database row with extracted result
     const { error: updateError } = await serverSupabase
       .from("reports")
       .update({
@@ -178,8 +165,6 @@ export async function POST(request: NextRequest) {
       ...validated,
     });
   } catch (error: unknown) {
-    console.error("API /api/reports/extract error:", error);
-
     // Auto-clean uploaded files on extraction failure
     if (serverSupabaseInstance && storagePaths.length > 0) {
       try {
@@ -189,10 +174,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (error instanceof UploadValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     if (error instanceof QuotaExceededError) {
       return NextResponse.json({ error: error.message }, { status: 429 });
     }
 
+    console.error("API /api/reports/extract error:", error);
     return NextResponse.json(
       { error: "Failed to extract values from report. Please verify your file and try again." },
       { status: 500 }

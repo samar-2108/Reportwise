@@ -30,13 +30,6 @@ export default function SettingsPage() {
     return "veg";
   });
 
-  const [keepFiles, setKeepFiles] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("reportwise_keep_files") === "true";
-    }
-    return false;
-  });
-
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -45,7 +38,6 @@ export default function SettingsPage() {
     setSaving(true);
     if (typeof window !== "undefined") {
       localStorage.setItem("reportwise_diet", dietPreference);
-      localStorage.setItem("reportwise_keep_files", String(keepFiles));
     }
     setTimeout(() => {
       setSaving(false);
@@ -220,23 +212,14 @@ export default function SettingsPage() {
               Storage & Document Privacy Controls
             </h2>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 text-xs">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!keepFiles}
-                  onChange={(e) => setKeepFiles(!e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                />
-                <div className="space-y-0.5">
-                  <span className="font-bold text-slate-900 block">
-                    Auto-Delete Original Files After Processing (Recommended)
-                  </span>
-                  <p className="text-slate-500 leading-relaxed text-[11px]">
-                    Once numerical values and plain-language insights are generated, ReportWise permanently wipes the original uploaded image/PDF from storage.
-                  </p>
-                </div>
-              </label>
+            <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-4 space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-teal-900 font-bold">
+                <CheckCircle2 className="h-4 w-4 text-teal-600 shrink-0" />
+                <span>Zero File Retention Policy (Enforced)</span>
+              </div>
+              <p className="text-teal-800 leading-relaxed text-[11px]">
+                For your privacy, ReportWise always deletes uploaded report files immediately after analysis. Only structured, anonymized numerical data is retained for your health history.
+              </p>
             </div>
 
             <button

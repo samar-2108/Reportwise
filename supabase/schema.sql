@@ -125,7 +125,8 @@ create policy "Users can view own profile"
 drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile"
   on public.profiles for update
-  using (auth.uid() = id);
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
 
 drop policy if exists "Users can insert own profile" on public.profiles;
 create policy "Users can insert own profile"
@@ -152,7 +153,8 @@ create policy "Users can insert own reports"
 drop policy if exists "Users can update own reports" on public.reports;
 create policy "Users can update own reports"
   on public.reports for update
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 drop policy if exists "Users can delete own reports" on public.reports;
 create policy "Users can delete own reports"
@@ -318,7 +320,8 @@ create policy "Users can insert own conversations"
 drop policy if exists "Users can update own conversations" on public.chat_conversations;
 create policy "Users can update own conversations"
   on public.chat_conversations for update
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 drop policy if exists "Users can delete own conversations" on public.chat_conversations;
 create policy "Users can delete own conversations"
@@ -334,12 +337,19 @@ create policy "Users can view own messages"
 drop policy if exists "Users can insert own messages" on public.chat_messages;
 create policy "Users can insert own messages"
   on public.chat_messages for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id and
+    (conversation_id is null or exists (
+      select 1 from public.chat_conversations c
+      where c.id = conversation_id and c.user_id = auth.uid()
+    ))
+  );
 
 drop policy if exists "Users can update own messages" on public.chat_messages;
 create policy "Users can update own messages"
   on public.chat_messages for update
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 drop policy if exists "Users can delete own messages" on public.chat_messages;
 create policy "Users can delete own messages"
@@ -364,11 +374,14 @@ create table if not exists public.feedback (
 -- RLS: Enable row level security
 alter table public.feedback enable row level security;
 
--- Policies for feedback: Anyone (authenticated or guest) can submit feedback
+-- Policies for feedback: Anyone (authenticated or guest) can submit feedback with strict user_id checking
 drop policy if exists "Anyone can submit feedback" on public.feedback;
 create policy "Anyone can submit feedback"
   on public.feedback for insert
-  with check (true);
+  with check (
+    (auth.uid() is not null and user_id = auth.uid()) or
+    (auth.uid() is null and user_id is null)
+  );
 
 -- Users can view their own submitted feedback
 drop policy if exists "Users can view own feedback" on public.feedback;
