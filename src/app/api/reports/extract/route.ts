@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLLMProvider, LLMFile, QuotaExceededError } from "@/lib/llm";
+import { getLLMProvider, LLMFile } from "@/lib/llm";
 import { EXTRACTION_SYSTEM_PROMPT } from "@/prompts/extraction";
 import { userDailyCapLimiter } from "@/lib/rate-limit/daily-cap";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { consumeRateLimit } from "@/lib/rate-limit";
+import { getServerEnv } from "@/lib/env";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ExtractionResultSchema } from "@/lib/schemas/extraction";
 import { reportCache, computeFilesSha256 } from "@/lib/cache/report-cache";
 import { usageTracker } from "@/lib/usage/tracker";
+import { safeErrorResponse } from "@/lib/security/safe-error";
+import { validateUploadedFiles } from "@/lib/security/upload-validation";
 
 export async function POST(request: NextRequest) {
+  const storagePaths: string[] = [];
+  let serverSupabaseInstance: Awaited<ReturnType<typeof getSupabaseServerClient>> | null = null;
+
   try {
     const formData = await request.formData();
-    const files = formData.getAll("files") as File[];
+    const rawFiles = formData.getAll("files") as File[];
 
-    if (!files || files.length === 0) {
-      return NextResponse.json({ error: "No files were uploaded" }, { status: 400 });
-    }
+    // 1. Validate files against size limits and magic byte signatures
+    const validatedFiles = await validateUploadedFiles(rawFiles);
 
-    if (files.length > 5) {
-      return NextResponse.json({ error: "Maximum 5 pages allowed per report" }, { status: 400 });
-    }
-
-    // 1. Authenticate user
+    // 2. Authenticate user using user-scoped client
     const serverSupabase = await getSupabaseServerClient();
+    serverSupabaseInstance = serverSupabase;
     const {
       data: { user },
+      error: authError,
     } = await serverSupabase.auth.getUser();
 
-    if (!user) {
+    if (authError || !user) {
       return NextResponse.json(
         { error: "Please sign in with Google to upload and analyze your lab report." },
         { status: 401 }
@@ -35,89 +38,98 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = user.id;
-    const supabase = getSupabaseAdminClient();
+    const env = getServerEnv();
 
-    // 2. Check per-user daily quota limit
-    const limitCheck = userDailyCapLimiter.checkLimit(userId);
-    if (!limitCheck.allowed) {
+    // 3. Check rate limits (burst + daily atomic caps)
+    const burstCheck = await consumeRateLimit(userId, "extract:burst", 5, 60);
+    if (!burstCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many upload requests. Please wait a minute and try again." },
+        { status: 429 }
+      );
+    }
+
+    const dailyCheck = await consumeRateLimit(
+      userId,
+      "analyses:daily",
+      env.MAX_ANALYSES_PER_USER_PER_DAY,
+      86400
+    );
+    if (!dailyCheck.allowed) {
       return NextResponse.json(
         {
-          error: `Daily limit reached (${limitCheck.limit} analyses/day). Please try again tomorrow.`,
+          error: `Daily limit reached (${env.MAX_ANALYSES_PER_USER_PER_DAY} analyses/day). Please try again tomorrow.`,
         },
         { status: 429 }
       );
     }
 
-    // 3. Convert files to LLMFile buffers
+    userDailyCapLimiter.increment(userId);
+
+    // 4. Convert files to LLMFile buffers and upload to user storage folder
     const llmFiles: LLMFile[] = [];
-    const storagePaths: string[] = [];
     const reportId = crypto.randomUUID();
 
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const buffer = Buffer.from(await f.arrayBuffer());
+    for (let i = 0; i < validatedFiles.length; i++) {
+      const f = validatedFiles[i];
+
       llmFiles.push({
-        mimeType: f.type || "image/jpeg",
-        data: buffer,
+        mimeType: f.mimeType,
+        data: f.buffer,
       });
 
-      // Upload to private Supabase storage bucket if configured
-      if (supabase) {
-        const filePath = `${userId}/${reportId}/page-${i + 1}-${f.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from("reports")
-          .upload(filePath, buffer, {
-            contentType: f.type || "image/jpeg",
-            upsert: true,
-          });
+      // Strict server-generated filename prevents path traversal
+      const safeFilePath = `${userId}/${reportId}/page-${i + 1}.${f.extension}`;
 
-        if (uploadError) {
-          console.warn(`Supabase storage upload error for page ${i + 1}:`, uploadError);
-        } else {
-          storagePaths.push(filePath);
-        }
-      }
-    }
+      const { error: uploadError } = await serverSupabase.storage
+        .from("reports")
+        .upload(safeFilePath, f.buffer, {
+          contentType: f.mimeType,
+          upsert: true,
+        });
 
-    // 4. Create reports table row with status "processing"
-    if (supabase) {
-      try {
-        await supabase.from("profiles").upsert(
-          {
-            id: userId,
-            email: user.email ?? null,
-            full_name:
-              user.user_metadata?.full_name ||
-              user.user_metadata?.name ||
-              user.email?.split("@")[0] ||
-              "Patient",
-            language: "en",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
-      } catch (profileErr) {
-        console.warn("Could not upsert profile:", profileErr);
-      }
-
-      const { error: insertError } = await supabase.from("reports").insert({
-        id: reportId,
-        user_id: userId,
-        title: "Lab Report",
-        status: "processing",
-        storage_file_paths: storagePaths,
-      });
-
-      if (insertError) {
-        console.error("Supabase insert report error in /api/reports/extract:", insertError);
+      if (uploadError) {
+        console.warn(`Storage upload error for page ${i + 1}:`, uploadError.message);
       } else {
-        console.log(`Report row ${reportId} created in 'processing' status`);
+        storagePaths.push(safeFilePath);
       }
     }
 
-    // 5. Check SHA-256 cache or invoke LLM Pass 1 Extraction
-    const fileHash = computeFilesSha256(llmFiles);
-    const cachedExtraction = reportCache.getExtraction(fileHash);
+    // 5. Create reports table row with status "processing" via user-scoped client
+    try {
+      await serverSupabase.from("profiles").upsert(
+        {
+          id: userId,
+          email: user.email ?? null,
+          full_name:
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            user.email?.split("@")[0] ||
+            "Patient",
+          language: "en",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (profileErr) {
+      console.warn("Could not upsert profile:", profileErr);
+    }
+
+    const { error: insertError } = await serverSupabase.from("reports").insert({
+      id: reportId,
+      user_id: userId,
+      title: "Lab Report",
+      status: "processing",
+      storage_file_paths: storagePaths,
+    });
+
+    if (insertError) {
+      console.error("Supabase insert report error in /api/reports/extract:", insertError.message);
+    }
+
+    // 6. Check user-scoped SHA-256 cache or invoke LLM Pass 1 Extraction
+    const fileHash = computeFilesSha256(userId, llmFiles);
+    const cachedExtraction = reportCache.getExtraction(fileHash, userId);
     let validated;
 
     if (cachedExtraction) {
@@ -127,24 +139,23 @@ export async function POST(request: NextRequest) {
       const provider = getLLMProvider();
       const rawResult = await provider.extractFromFiles(llmFiles, EXTRACTION_SYSTEM_PROMPT);
       validated = ExtractionResultSchema.parse(rawResult);
-      reportCache.setExtraction(fileHash, validated);
+      reportCache.setExtraction(fileHash, validated, userId);
     }
 
-    // 6. Update database row with extracted result
-    if (supabase) {
-      const { error: updateError } = await supabase
-        .from("reports")
-        .update({
-          status: "extracted",
-          report_type: "report_type" in validated ? validated.report_type : null,
-          extracted_data: JSON.parse(JSON.stringify(validated)),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", reportId);
+    // 7. Update database row with extracted result
+    const { error: updateError } = await serverSupabase
+      .from("reports")
+      .update({
+        status: "extracted",
+        report_type: "report_type" in validated ? validated.report_type : null,
+        extracted_data: JSON.parse(JSON.stringify(validated)),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", reportId)
+      .eq("user_id", userId);
 
-      if (updateError) {
-        console.error("Supabase update report error in /api/reports/extract:", updateError);
-      }
+    if (updateError) {
+      console.error("Supabase update report error in /api/reports/extract:", updateError.message);
     }
 
     return NextResponse.json({
@@ -152,18 +163,19 @@ export async function POST(request: NextRequest) {
       ...validated,
     });
   } catch (error: unknown) {
-    console.error("API /api/reports/extract error:", error);
-
-    if (error instanceof QuotaExceededError) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 429 }
-      );
+    // Auto-clean uploaded files on extraction failure
+    if (serverSupabaseInstance && storagePaths.length > 0) {
+      try {
+        await serverSupabaseInstance.storage.from("reports").remove(storagePaths);
+      } catch (cleanupErr) {
+        console.warn("Failed to clean up files on extraction error:", cleanupErr);
+      }
     }
 
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to extract values from report" },
-      { status: 500 }
+    return safeErrorResponse(
+      error,
+      "Failed to extract values from report. Please verify your file and try again.",
+      500
     );
   }
 }

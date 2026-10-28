@@ -79,14 +79,17 @@ cp .env.example .env.local
 | Variable | Default / Example | Description |
 |---|---|---|
 | `GEMINI_API_KEY` | `AIzaSy...` | Free API key from Google AI Studio. |
-| `GEMINI_MODEL_EXTRACT` | `gemini-2.5-flash` | Vision model used for Pass 1 extraction. |
-| `GEMINI_MODEL_INTERPRET` | `gemini-2.5-flash` | Fast model used for Pass 2 plain-language analysis. |
-| `LLM_PROVIDER` | `gemini` (or `mock`) | Selects active provider. Set to `mock` to test without consuming quota. |
+| `GEMINI_MODEL_EXTRACT` | `gemini-2.0-flash` | Vision model used for Pass 1 extraction. |
+| `GEMINI_MODEL_INTERPRET` | `gemini-2.0-flash` | Plain-language model used for Pass 2 analysis. |
+| `LLM_PROVIDER` | `gemini` (or `mock`) | Selects active provider (`gemini` or `mock`). |
 | `MAX_ANALYSES_PER_USER_PER_DAY` | `20` | Max analyses per user per day. |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Supabase project URL. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `your-anon-key` | Supabase anon key. |
-| `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | Backend admin key for database cleanups and migrations. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `your-anon-key` | Supabase anon key (client-safe). |
+| `SUPABASE_SERVICE_ROLE_KEY` | `your-service-role-key` | Service role key (backend only; used for cron and rate limit RPC). |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Application root URL. |
+| `ADMIN_EMAILS` | `admin@example.com` | Comma-separated lowercased emails allowed to access `/admin/usage`. |
+| `CRON_SECRET` | `secret-token` | Bearer token required for scheduled cleanup at `/api/cron/cleanup`. |
+| `FEEDBACK_RECIPIENT_EMAIL` | `samarmehta845@gmail.com` | Destination for user feedback submissions. |
 
 ---
 
@@ -110,6 +113,58 @@ cp .env.example .env.local
 5. In Supabase Dashboard under **Authentication** -> **URL Configuration**, add your application callback URL:
    - Development: `http://localhost:3000/auth/callback`
    - Production: `https://your-domain.com/auth/callback`
+
+---
+
+## 🔒 Security Architecture & Safeguards
+
+ReportWise processes sensitive medical laboratory records. The application enforces multi-layered defense-in-depth across database access, file uploads, AI prompts, and network endpoints:
+
+### 1. Row Level Security & User-Scoped Isolation
+* **User-Scoped Operations:** All patient CRUD queries (reports list, view, update, delete, chat conversations, messages, and profile) execute exclusively through `getSupabaseServerClient()`, which enforces PostgreSQL Row Level Security (`auth.uid() = user_id`).
+* **Service-Role Segregation:** The Supabase admin client (`getSupabaseAdminClient()`) is explicitly restricted to server-side maintenance operations (rate-limit atomic RPCs, scheduled cron cleanup) and imports `"server-only"`.
+* **IDOR & Hijacking Defense:** `/api/reports/analyze` explicitly verifies report ownership prior to mutations (`.eq("id", id).eq("user_id", user.id)`). Foreign or non-existent report IDs trigger 404 responses or fresh server-generated UUIDs rather than overwriting existing records.
+* **Storage Path Validation:** All file deletions and access require `assertOwnedPaths(userId, paths)`, which strictly verifies that every storage path starts with `${userId}/` and rejects directory traversal sequences (`..`, `\`, `//`).
+
+### 2. File Upload Security & Magic-Byte Sniffing
+* **Strict Signature Sniffing:** Uploaded files in `/api/reports/extract` are inspected for true binary file signatures (magic bytes) for JPEG (`FF D8 FF`), PNG (`89 50 4E 47`), WebP (`RIFF...WEBP`), PDF (`%PDF`), and HEIC (`ftyp`). Client-provided MIME types and extensions are completely untrusted.
+* **Payload Constraints:** Strict caps enforce a maximum of 5 pages per report, 10MB per file, and 30MB total payload per request.
+* **Sanitized Storage Keys:** Storage filenames are generated strictly on the server: `${userId}/${reportId}/page-${index}.${extension}`. Client-supplied file names are discarded.
+* **Zero Medical File Retention:** Original uploaded medical documents are automatically deleted from storage immediately following extraction and analysis. A scheduled cleanup cron cleans up any abandoned uploads older than 1 hour.
+
+### 3. Rate Limiting & Abuse Prevention
+* **Atomic PostgreSQL Counters:** Rate limits are tracked atomically in PostgreSQL via the `rate_limits` table and the `consume_rate_limit` stored procedure with row-level locks (`SELECT ... FOR UPDATE`), protecting against race conditions and burst attacks.
+* **Tiered Bucket Limits:**
+  * Report Extractions: 5 per minute (burst), daily analysis cap (configurable via `MAX_ANALYSES_PER_USER_PER_DAY`).
+  * Report Analysis: 10 per minute (burst), daily analysis cap.
+  * Health Chat: 10 per minute (burst), 50 messages per day.
+  * User Feedback: 5 submissions per hour per user / IP.
+* **Fail-Closed Mode:** In production, rate limiting fails closed if the database RPC is unreachable.
+
+### 4. Admin Access & Diagnostic Gating
+* **Stealth Admin Route:** `/admin/usage` and `/api/admin/usage` are protected by `requireAdmin()`. Non-admins and unconfirmed accounts receive a 404 Not Found response (rather than 403) to prevent route advertising and enumeration.
+* **Verified Email Check:** The user's lowercased email must have `email_confirmed_at` verified and match the `ADMIN_EMAILS` whitelist.
+
+### 5. Prompt Injection Defense & Data Boundaries
+* **Strict XML Delimiters:** User-provided biomarkers and patient context are enclosed in `<report_data>` and `<patient_context>` delimiters before passing to Gemini LLM prompts.
+* **Control Character Stripping:** Dangerous ASCII/Unicode control characters (`\u0000-\u0008`, `\u000B-\u001F`, `\u007F-\u009F`) and closing delimiter tags are sanitized.
+* **Instruction Immunization:** System prompts instruct the LLM to treat all text within data delimiters strictly as inert clinical data, never as executable commands or prompt overrides.
+
+### 6. Scheduled Cleanup Cron Endpoint
+* `/api/cron/cleanup` is protected by `Authorization: Bearer <CRON_SECRET>`.
+* Purges abandoned storage uploads in the `reports` bucket older than 1 hour.
+* Purges expired rate limiting records older than 3 days.
+* Can be scheduled via Vercel Cron, GitHub Actions, or crontab:
+  ```bash
+  curl -X POST https://your-domain.com/api/cron/cleanup \
+    -H "Authorization: Bearer YOUR_CRON_SECRET"
+  ```
+
+### 7. Security Headers & Secret Scanning
+* **Content Security Policy:** Strict CSP in `next.config.ts` restricting scripts, frames (`frame-ancestors 'none'`), forms, and connections.
+* **Security Headers:** HSTS (`max-age=63072000; includeSubDomains; preload`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin`.
+* **Secrets Scanning:** Automated pre-commit and CI secrets scanning script (`scripts/check-secrets.sh` or `npm run check:secrets`) guards against committed API keys, tokens, and credentials.
+
 
 ---
 
