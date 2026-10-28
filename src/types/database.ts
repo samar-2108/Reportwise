@@ -201,9 +201,47 @@ export interface Database {
         };
         Relationships: [];
       };
+      rate_limits: {
+        Row: {
+          key: string;
+          bucket: string;
+          count: number;
+          window_start: string;
+        };
+        Insert: {
+          key: string;
+          bucket: string;
+          count?: number;
+          window_start?: string;
+        };
+        Update: {
+          key?: string;
+          bucket?: string;
+          count?: number;
+          window_start?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      consume_rate_limit: {
+        Args: {
+          p_key: string;
+          p_bucket: string;
+          p_limit: number;
+          p_window_seconds: number;
+        };
+        Returns: Json;
+      };
+      reset_rate_limit: {
+        Args: {
+          p_key: string;
+          p_bucket?: string | null;
+        };
+        Returns: void;
+      };
+    };
     Enums: {
       report_status: ReportStatus;
     };

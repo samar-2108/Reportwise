@@ -10,6 +10,9 @@ const serverEnvSchema = z.object({
   LLM_PROVIDER: z.enum(["gemini", "mock"]).default("gemini"),
   MAX_ANALYSES_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  ADMIN_EMAILS: z.string().optional(),
+  CRON_SECRET: z.string().optional(),
+  FEEDBACK_RECIPIENT_EMAIL: z.string().email().optional(),
 });
 
 const clientEnvSchema = z.object({
@@ -22,9 +25,8 @@ export type ServerEnv = z.infer<typeof serverEnvSchema>;
 export type ClientEnv = z.infer<typeof clientEnvSchema>;
 
 export function getServerEnv(): ServerEnv {
-  // Ensure daily analysis cap is permanently at least 20 for seamless debugging and development
   const rawMax = Number(process.env.MAX_ANALYSES_PER_USER_PER_DAY);
-  const maxAnalyses = !isNaN(rawMax) && rawMax >= 15 ? rawMax : 20;
+  const maxAnalyses = !isNaN(rawMax) && rawMax > 0 ? rawMax : 20;
 
   const result = serverEnvSchema.safeParse({
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -36,6 +38,9 @@ export function getServerEnv(): ServerEnv {
     LLM_PROVIDER: process.env.LLM_PROVIDER || "gemini",
     MAX_ANALYSES_PER_USER_PER_DAY: maxAnalyses,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    ADMIN_EMAILS: process.env.ADMIN_EMAILS,
+    CRON_SECRET: process.env.CRON_SECRET,
+    FEEDBACK_RECIPIENT_EMAIL: process.env.FEEDBACK_RECIPIENT_EMAIL,
   });
 
   if (!result.success) {
@@ -53,6 +58,9 @@ export function getServerEnv(): ServerEnv {
       LLM_PROVIDER: (process.env.LLM_PROVIDER as "gemini" | "mock") || "gemini",
       MAX_ANALYSES_PER_USER_PER_DAY: maxAnalyses,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+      ADMIN_EMAILS: process.env.ADMIN_EMAILS,
+      CRON_SECRET: process.env.CRON_SECRET,
+      FEEDBACK_RECIPIENT_EMAIL: process.env.FEEDBACK_RECIPIENT_EMAIL,
     };
   }
 
