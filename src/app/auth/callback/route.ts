@@ -5,20 +5,32 @@ import { Database } from "@/types/database";
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const next = requestUrl.searchParams.get("next") ?? "/";
+  const rawNext = requestUrl.searchParams.get("next") ?? "/";
 
-  // Robust origin determination across local dev, LAN IP (e.g. Wi-Fi testing), reverse proxies, and production domains
-  const rawHost = request.headers.get("x-forwarded-host") || request.headers.get("host") || requestUrl.host;
-  const host = rawHost.split(",")[0].trim();
-  const rawProto = request.headers.get("x-forwarded-proto");
-  const proto = rawProto
-    ? rawProto.split(",")[0].trim()
-    : host.includes("localhost") || host.includes("127.0.0.1")
-    ? "http"
-    : "https";
+  // Sanitize redirect target to strictly relative local paths
+  const safeNext =
+    rawNext.startsWith("/") &&
+    !rawNext.startsWith("//") &&
+    !rawNext.includes("\\") &&
+    !rawNext.includes(":")
+      ? rawNext
+      : "/";
 
-  const targetOrigin = `${proto}://${host}`;
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  // Enforce origin restrictions in production against Host header poisoning
+  let targetOrigin = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+  if (process.env.NODE_ENV !== "production") {
+    const rawHost = request.headers.get("x-forwarded-host") || request.headers.get("host") || requestUrl.host;
+    const host = rawHost.split(",")[0].trim();
+    const rawProto = request.headers.get("x-forwarded-proto");
+    const proto = rawProto
+      ? rawProto.split(",")[0].trim()
+      : host.includes("localhost") || host.includes("127.0.0.1")
+      ? "http"
+      : "https";
+    targetOrigin = `${proto}://${host}`;
+  }
+
   const destination = `${targetOrigin}${safeNext}`;
 
   if (code) {
@@ -26,7 +38,7 @@ export async function GET(request: NextRequest) {
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (supabaseUrl && supabaseAnonKey) {
-      // Create response first (303 See Other is standard for OAuth redirect)
+      // 303 See Other is standard for OAuth redirect
       const response = NextResponse.redirect(destination, { status: 303 });
 
       const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
@@ -36,7 +48,12 @@ export async function GET(request: NextRequest) {
           },
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) => {
-              response.cookies.set(name, value, options);
+              response.cookies.set(name, value, {
+                ...options,
+                httpOnly: true,
+                sameSite: "lax",
+                secure: process.env.NODE_ENV === "production",
+              });
             });
           },
         },
@@ -45,8 +62,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
       if (!error && data?.user) {
-        // Upsert user profile non-blockingly with tight timeout (max 600ms)
-        // so the HTTP redirect response is NEVER stalled or buffering in the browser
+        // Upsert user profile non-blockingly with tight timeout
         try {
           await Promise.race([
             supabase.from("profiles").upsert(
@@ -74,7 +90,7 @@ export async function GET(request: NextRequest) {
         return response;
       }
 
-      console.error("Auth callback code exchange error:", error);
+      console.error("Auth callback code exchange error:", error?.message);
     }
   }
 
