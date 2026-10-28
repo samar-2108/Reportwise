@@ -229,3 +229,4 @@ python3 -c "import urllib.request; data = '{\"tests\":[' + ','.join(['{\"test\":
    - Configure a recurring hourly task (e.g., Vercel Cron or GitHub Actions) triggering `GET /api/cron/cleanup` with `Bearer <CRON_SECRET>`.
 4. **Gemini Production API Tier:**
    - For real patient use, transition from Google AI Studio free tier to Google Cloud Vertex AI / Gemini API paid tier with zero-data-retention and HIPAA BAA terms.
+

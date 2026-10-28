@@ -53,3 +53,4 @@ export function validateCsrfOrigin(request: NextRequest): boolean {
 
   return true;
 }
+

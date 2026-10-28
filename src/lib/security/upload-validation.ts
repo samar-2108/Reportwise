@@ -122,3 +122,4 @@ export async function validateUploadedFiles(files: File[]): Promise<SniffedFile[
 
   return validatedFiles;
 }
+

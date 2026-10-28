@@ -45,3 +45,4 @@ fi
 
 echo "✅ Secret scan passed: No hardcoded secrets, credentials, or private keys detected."
 exit 0
+

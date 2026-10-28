@@ -60,3 +60,4 @@ export async function requireAdmin(): Promise<{ user: User } | NextResponse> {
 
   return { user };
 }
+

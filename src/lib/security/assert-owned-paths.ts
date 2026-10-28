@@ -23,3 +23,4 @@ export function assertOwnedPaths(userId: string, paths: string[]): string[] {
 
   return paths;
 }
+
